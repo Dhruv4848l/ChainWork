@@ -102,7 +102,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 7** — Wire escrow into the app (live on local chain; Amoy = swap env) — *done*
 - [x] **Phase 8** — Auto-release timer + reminder-cap worker — *done*
 - [x] **Phase 9** — Wallet layer (custodial + external) — *done*
-- [ ] Phase 10 — Admin/Jury console (separate app + DB + bridge service)
+- [x] **Phase 10** — Admin/Jury console (separate app + DB + bridge service) — *done*
 - [ ] Phase 11 — Complaint → triage → commit-reveal jury → verdict
 - [ ] Phase 12 — Notifications, messaging, reviews
 - [ ] Phase 13 — Hardening (edge cases, tests, security, mobile/a11y, pre-mainnet checklist)
@@ -313,6 +313,34 @@ vars at Amoy + a real relayer key.
 - **Verified:** signature ownership proof (accepts real signer, rejects impostor); on-ramp
   ₹0→₹10,000 through the UI; off-ramp moves funds out to ₹0; wallet UI renders the real address +
   connect options.
+
+## Admin & Jury console (Phase 10)
+
+- **Separate surface under `/admin`.** Own auth, own chrome, its own DB (`chainwork_admin`). Consumer
+  sessions never reach it and vice-versa.
+- **Auth:** `src/lib/admin/session.ts` + edge-safe `src/lib/admin/jwt.ts` (cookie `cw_admin`,
+  namespaced key, 8h). AUTH-11 login = email + password + **mandatory TOTP 2FA** (`src/lib/admin/totp.ts`,
+  otplib v13 `generateSync`/`verifySync`; dev secret `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` shared by all
+  seeded admins since their seeded secrets are too short — the check itself is real; the current code
+  is logged to the server console in dev). **No signup.** Proxy guards `/admin/*` except `/admin/login`.
+- **THE BRIDGE SERVICE `src/lib/admin/bridge.ts` — the ONLY module under the admin surface that
+  imports `platformDb`.** Every platform read/sanctioned-write for admin code goes through it, by
+  primary-key id, sanitized (emails/phones masked). Verified by grep: no admin page/feature imports
+  platformDb. (Admin-DB reads use `adminDb` directly — that's the admin's own DB, no boundary.)
+- **Role scoping:** `src/lib/admin/roles.ts` (7 roles → visible nav + read-only Analyst). Enforced at
+  the route level via `requireAdminAccess(navKey)` (redirects) AND in the sidebar (`visibleNav`).
+  JURY sees only its assigned cases (ADM-11).
+- **Immutable audit log:** `src/lib/admin/audit.ts` `writeAudit(...)` — every privileged action
+  (login, KYC approve, moderation, triage, settle, config change) appends a who/what/when/before/
+  after row. ADM-19 reads it.
+- **Screens** (`src/app/admin/(console)/*`, ADM-02..19): dashboard, users (KYC queue)+[id], jobs,
+  blog-moderation, complaints (4-lane triage), ongoing, settlements (executes verdict on-chain via
+  the contract), confirmations (Phase 8 data via bridge), payments, disputes+[id] (case shell —
+  voting is Phase 11), jury+[id], reports, settings (edits PlatformConfig → audit), roles, audit.
+- **Verified live:** separate login + real 2FA; consumer cookie doesn't grant admin; Analyst nav
+  restricted to 3 sections + bounced from /admin/settings; login written to the audit log; bridge is
+  the sole platform-DB importer. Admin login: `root@chainwork.local` / `admin123` + the console-logged
+  2FA code.
 
 ## Reference files (not in this repo — on the developer's machine)
 

@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~71% — Phases 0–9 complete, 10 of 14 phases done. Wallets are real.**
+**Overall: ~79% — Phases 0–10 complete, 11 of 14 phases done. The admin console is live.**
 
-_Last updated: 2026-07-18 (Phase 9)._
+_Last updated: 2026-07-18 (Phase 10)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -20,6 +20,7 @@ _Last updated: 2026-07-18 (Phase 9)._
 | 7 | Wire escrow into the app (live on-chain) | ✅ Done | 100% |
 | 8 | Auto-release timer + reminder-cap worker | ✅ Done | 100% |
 | 9 | Wallet layer (custodial + external) | ✅ Done | 100% |
+| 10 | Admin/Jury console (separate app + DB + bridge) | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
 | 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
@@ -206,3 +207,20 @@ _Last updated: 2026-07-18 (Phase 9)._
 - **⚠ Honestly flagged:** custodial keys use a dev keystore — before mainnet this must move to an
   HSM / managed custody + a gasless relayer, and the on/off-ramp mocks need a real payment
   processor (tracked for Phase 13's pre-mainnet checklist).
+
+## Phase 10 — what got built (done 2026-07-18) · the admin & jury console
+
+- **A genuinely separate `/admin` console** on the separate Admin DB — its own login, its own chrome,
+  its own session (a consumer login never grants admin access, and vice-versa).
+- **Real admin auth (AUTH-11):** email + password + **mandatory TOTP 2FA** (a real check), no signup.
+- **The bridge service** — the single, only path from admin code to platform data (by ID, sanitized).
+  Verified by search that no admin screen bypasses it. This is the two-DB boundary made concrete.
+- **Role-scoped console** — 7 internal roles; each sees only its sections (the Analyst is read-only
+  and gets bounced from restricted pages; a Juror sees only their cases).
+- **All 18 ADM screens:** dashboard, KYC queue + user detail, job & blog moderation, the 4-lane
+  complaint triage, ongoing work, pending settlements (executes a verdict on-chain), pending
+  confirmations (the Phase 8 countdown), pending payments, dispute queue + case detail, jury roster
+  + member, reports, platform settings (edits config), roles, and the immutable audit log.
+- **Every privileged action writes to the immutable audit log.**
+- **Verified live:** logged in with real 2FA; confirmed session separation, role scoping (nav +
+  route), the audited login, and the bridge-only data boundary.

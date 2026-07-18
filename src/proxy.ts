@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE_NAME } from "@/lib/auth/jwt";
+import { verifyAdminToken, ADMIN_COOKIE } from "@/lib/admin/jwt";
 
 /*
   Route protection (Next 16 "proxy" convention — formerly "middleware"). Runs on
@@ -21,6 +22,20 @@ const ROLE_ROUTES: { prefix: string; role: "WORKER" | "CLIENT" }[] = [
 
 export default async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // --- Admin console: its own session, fully separate from consumer sessions. ---
+  if (pathname.startsWith("/admin")) {
+    if (pathname === "/admin/login") return NextResponse.next();
+    const token = req.cookies.get(ADMIN_COOKIE)?.value;
+    const admin = token ? await verifyAdminToken(token) : null;
+    if (!admin) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/admin/login";
+      url.search = "";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next();
+  }
 
   // The email-confirm link must work even when logged out (it self-validates).
   if (pathname.startsWith("/verify/email/confirm")) return NextResponse.next();
@@ -49,5 +64,5 @@ export default async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/onboarding/:path*", "/kyc", "/verify/:path*"],
+  matcher: ["/dashboard/:path*", "/onboarding/:path*", "/kyc", "/verify/:path*", "/admin/:path*"],
 };
