@@ -5,17 +5,13 @@ import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
 import { requireRole } from "@/lib/auth/guards";
 import * as chain from "@/lib/chain/escrow";
+import { getPlatformSettings } from "@/lib/config/platformConfig";
+import { addBusinessDays } from "@/lib/calendar/businessDays";
 
-/** A simple 2-working-day deadline (skips weekends). Phase 8 adds the holiday calendar. */
-function verificationDeadline(): Date {
-  const d = new Date();
-  let added = 0;
-  while (added < 2) {
-    d.setDate(d.getDate() + 1);
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) added++;
-  }
-  return d;
+/** The verification deadline: N working days out, skipping weekends + holidays. */
+async function verificationDeadline(): Promise<Date> {
+  const settings = await getPlatformSettings();
+  return addBusinessDays(new Date(), settings.verificationWindowWorkingDays, new Set(settings.holidays));
 }
 
 export interface ActionState {
@@ -131,7 +127,7 @@ export async function markPhaseDeliveredAction(phaseId: string): Promise<ActionS
     return { error: "This phase isn't ready to deliver." };
   }
 
-  const deadline = verificationDeadline();
+  const deadline = await verificationDeadline();
   try {
     // On-chain: mark delivered only if the escrow is still FUNDED (first delivery).
     // After a Request Changes round the on-chain phase is already DELIVERED, so we
@@ -143,7 +139,8 @@ export async function markPhaseDeliveredAction(phaseId: string): Promise<ActionS
     await platformDb.$transaction([
       platformDb.phase.update({
         where: { id: phase.id },
-        data: { status: "VERIFICATION_WINDOW_OPEN", deliveredAt: new Date(), verificationDeadline: deadline },
+        // reminderCount resets so the verification-window reminders start fresh.
+        data: { status: "VERIFICATION_WINDOW_OPEN", deliveredAt: new Date(), verificationDeadline: deadline, reminderCount: 0 },
       }),
       platformDb.notification.create({
         data: { userId: phase.hire.clientId, type: "ESCROW", title: "Phase delivered", body: `"${phase.name}" was delivered — approve or request changes before the window closes.` },

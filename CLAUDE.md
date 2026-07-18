@@ -100,7 +100,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 5** — Client dashboard (all CL screens + Post-a-Job, mock money) — *done · first demoable milestone*
 - [x] **Phase 6** — Escrow smart contracts (Solidity/Hardhat, testnet) — *done (local tests; Amoy deploy pending user)*
 - [x] **Phase 7** — Wire escrow into the app (live on local chain; Amoy = swap env) — *done*
-- [ ] Phase 8 — Auto-release timer + reminder-cap worker
+- [x] **Phase 8** — Auto-release timer + reminder-cap worker — *done*
 - [ ] Phase 9 — Wallet layer (custodial + external)
 - [ ] Phase 10 — Admin/Jury console (separate app + DB + bridge service)
 - [ ] Phase 11 — Complaint → triage → commit-reveal jury → verdict
@@ -268,6 +268,29 @@ The escrow flows need the chain running. Local dev, three terminals:
 3. `npm run dev` (the app). Postgres (PG17 service) must be running too.
 For the public testnet instead: deploy to Amoy (`contracts/README.md`) and point the `CHAIN_*` env
 vars at Amoy + a real relayer key.
+
+## Escrow timing engine (Phase 8)
+
+- **Working-days calendar** `src/lib/calendar/businessDays.ts` (skips weekends + configurable
+  holidays; `addBusinessDays` / `businessDaysBetween`). Unit tests `businessDays.test.ts`
+  (node:test, run `npx tsx --test src/lib/calendar/businessDays.test.ts` — 6 pass). Phase 7's crude
+  deadline was refactored to use this (worker `markDelivered` now uses the config window + holidays
+  and resets `reminderCount`).
+- **PlatformConfig reader** `src/lib/config/platformConfig.ts` reads the ADM-17 knobs from the Admin
+  DB (global settings, not user data — no cross-DB relation): verification window, reminder cap,
+  delivery-stake threshold, worker grace days, strike-suspend threshold, holidays.
+- **The tick worker** `src/lib/escrow/tick.ts` → `runEscrowTick()`: (1) sends ≤ reminderCap reminders
+  during a verification window then calls the contract's `autoRelease` once the window lapses +
+  reminders spent (the contract enforces it can't fire early); (2) symmetric worker ghosting — a
+  funded phase past its due date gets reminders then auto-cancels (`refundToClient` rollback + stake
+  forfeit + strike + suspend past threshold). Every transition is status-guarded → idempotent.
+- **Trigger:** `src/app/api/cron/escrow/route.ts` (Node runtime, `CRON_SECRET`-protected). Local
+  runner `worker/escrow-cron.mjs` (`node worker/escrow-cron.mjs`) hits it each minute; in prod a host
+  cron calls the same URL. `CRON_SECRET` in `.env`.
+- **ADM-09 data:** `src/lib/escrow/pendingConfirmations.ts` → `getPendingConfirmations()` (Phase 10
+  admin console reads via the bridge — phases mid-window, reminders sent, auto-release countdown).
+- **Verified:** calendar math (6 tests); a phase auto-released on-chain after exactly 2 reminders,
+  paying the worker (0 → ₹3,000), with the repeat tick a no-op (idempotent).
 
 ## Reference files (not in this repo — on the developer's machine)
 

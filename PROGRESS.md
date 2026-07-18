@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~57% — Phases 0–7 complete, 8 of 14 phases done. The payments are real (on testnet).**
+**Overall: ~64% — Phases 0–8 complete, 9 of 14 phases done. Escrow timing is automated.**
 
-_Last updated: 2026-07-18 (Phase 7)._
+_Last updated: 2026-07-18 (Phase 8)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -18,6 +18,7 @@ _Last updated: 2026-07-18 (Phase 7)._
 | 5 | Client dashboard + Post-a-Job (mock money) ◀ **first demoable** | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ **the heart** | ✅ Done | 100% |
 | 7 | Wire escrow into the app (live on-chain) | ✅ Done | 100% |
+| 8 | Auto-release timer + reminder-cap worker | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
 | 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
@@ -170,3 +171,21 @@ _Last updated: 2026-07-18 (Phase 7)._
   hashes were captured. Runs the same against Polygon Amoy by swapping the env vars.
 - Still testnet only until an audit. Running it needs the Hardhat node + a deploy + Postgres (see
   CLAUDE.md "Running the app with the chain").
+
+## Phase 8 — what got built (done 2026-07-18) · the timing engine
+
+- **A working-days calendar** (skips weekends + configurable holidays) now drives every verification
+  deadline — 6 unit tests pass (incl. "Friday delivery → Tuesday deadline").
+- **A background tick worker** (hit via a `CRON_SECRET`-protected cron route; a local runner fires it
+  each minute) enforces the timing rules:
+  - **Reminder cap** — at most 2 reminders to the client during the verification window.
+  - **Auto-release on ghosting** — once the window lapses and the reminders are spent, it calls the
+    contract's `autoRelease` (which, as Phase 6 proved, can't fire early) and pays the worker.
+  - **Symmetric worker rule** — a funded phase past its due date gets reminders, then auto-cancels:
+    escrow rolled back to the client, delivery stake forfeited, a strike applied, suspension past a
+    threshold.
+- **Idempotent** — every transition is status-guarded, so running it repeatedly never double-releases
+  or double-reminds.
+- **Verified end to end on-chain:** a phase auto-released after exactly 2 reminders → the worker's
+  on-chain balance went 0 → ₹3,000 → a repeat tick did nothing. Feeds the ADM-09 "pending
+  confirmations" data for Phase 10.
