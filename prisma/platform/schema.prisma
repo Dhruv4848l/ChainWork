@@ -1,0 +1,503 @@
+// ============================================================================
+// ChainWork — PLATFORM DATABASE
+// Everything Workers and Clients touch. This is one of TWO physically separate
+// databases. The Admin/Jury DB (prisma/admin/schema.prisma) never holds a real
+// foreign key into this one — it stores only ID references and reaches real data
+// through the bridge service (Phase 10). See CLAUDE.md.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/platform"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  WORKER
+  CLIENT
+}
+
+/// KYC verification tiers. The KYC gate (Phase 2) blocks money movement below VERIFIED.
+enum KycTier {
+  UNVERIFIED
+  BASIC
+  VERIFIED
+  TRUSTED
+}
+
+enum ClientType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum SkillProficiency {
+  BEGINNER
+  INTERMEDIATE
+  SKILLED
+  EXPERT
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  EXPIRED
+  CANCELLED
+  ARCHIVED
+}
+
+enum FundingMode {
+  FUND_NOW // escrow funded at posting
+  FUND_AT_HIRE // escrow funded when a worker is hired
+}
+
+/// Application lifecycle (Appendix A of the spec).
+enum ApplicationStatus {
+  APPLIED
+  UNDER_REVIEW
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+  HIRED
+}
+
+enum HireStatus {
+  ACTIVE
+  NO_SHOW_FLAGGED
+  COMPLETED
+  CANCELLED
+  ARCHIVED
+}
+
+/// Phase lifecycle — the heart of the phase-based escrow model (spec Appendix A).
+enum PhaseStatus {
+  PENDING_FUNDING // planned but not yet funded (sequential funding rule)
+  FUNDED
+  IN_PROGRESS
+  DELIVERED
+  VERIFICATION_WINDOW_OPEN
+  RELEASED
+  DISPUTED
+  AUTO_CANCELLED
+}
+
+enum EscrowTxType {
+  FUND
+  RELEASE
+  REFUND
+  SPLIT
+  STAKE_LOCK
+  STAKE_FORFEIT
+  STAKE_REFUND
+}
+
+enum EscrowTxStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum StakeStatus {
+  LOCKED
+  FORFEITED
+  REFUNDED
+}
+
+enum ReviewDirection {
+  CLIENT_TO_WORKER
+  WORKER_TO_CLIENT
+}
+
+enum ComplaintCategory {
+  QUALITY
+  NO_SHOW
+  PAYMENT
+  CONDUCT
+  DAMAGE
+  OTHER
+}
+
+/// The 4 triage lanes of ADM-06 (Super Admin complaint intake).
+enum TriageLane {
+  TRIVIAL // -> support agent resolves directly
+  POLICY // -> super admin
+  FINANCIAL // -> jury (escrow disputes)
+  FRAUD // -> finance/compliance
+}
+
+enum ComplaintStatus {
+  OPEN
+  TRIAGED
+  ESCALATED
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationType {
+  APPLICATION
+  ESCROW
+  PAYMENT
+  REMINDER
+  DISPUTE
+  JURY
+  MESSAGE
+  REVIEW
+  SYSTEM
+}
+
+// ---------------------------------------------------------------------------
+// Identity & profiles
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  role         Role
+  email        String   @unique
+  phone        String?  @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  kycTier      KycTier  @default(UNVERIFIED)
+  emailVerified Boolean @default(false)
+  phoneVerified Boolean @default(false)
+  strikes      Int      @default(0)
+  suspended    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workerProfile WorkerProfile?
+  clientProfile ClientProfile?
+  wallet        Wallet?
+
+  jobsPosted      Job[]            @relation("ClientJobs")
+  applications    JobApplication[] @relation("WorkerApplications")
+  hiresAsWorker   Hire[]           @relation("WorkerHires")
+  hiresAsClient   Hire[]           @relation("ClientHires")
+  reviewsAuthored Review[]         @relation("ReviewAuthor")
+  reviewsReceived Review[]         @relation("ReviewSubject")
+  complaintsFiled Complaint[]      @relation("ComplaintFiler")
+  messages        Message[]
+  notifications   Notification[]
+}
+
+model WorkerProfile {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  headline           String?
+  bio                String?
+  experienceYears    Int      @default(0)
+  location           String?
+  locationRadiusKm   Int      @default(10)
+  availability       String? // e.g. "Weekdays", "Immediate"
+  languages          String[] @default([])
+  portfolioImages    String[] @default([])
+  completedJobsCount Int      @default(0)
+  ratingAvg          Float    @default(0)
+  ratingPunctuality  Float    @default(0)
+  ratingQuality      Float    @default(0)
+  ratingCommunication Float   @default(0)
+  // Jury-duty opt-in lives in the worker/client's own settings (WK-16 / CL-12).
+  juryOptIn          Boolean  @default(false)
+
+  skills WorkerSkill[]
+}
+
+model ClientProfile {
+  id                     String     @id @default(cuid())
+  userId                 String     @unique
+  user                   User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientType             ClientType @default(INDIVIDUAL)
+  companyName            String?
+  address                String?
+  businessRegNumber      String?
+  escrowReliabilityScore Float      @default(100)
+  hiresCount             Int        @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Taxonomy
+// ---------------------------------------------------------------------------
+
+model Category {
+  id    String  @id @default(cuid())
+  name  String  @unique
+  slug  String  @unique
+  icon  String?
+  skills Skill[]
+  jobs   Job[]
+}
+
+model Skill {
+  id         String        @id @default(cuid())
+  name       String        @unique
+  categoryId String
+  category   Category      @relation(fields: [categoryId], references: [id])
+  workerSkills WorkerSkill[]
+  roleLineItems JobRoleLineItem[]
+}
+
+model WorkerSkill {
+  id              String           @id @default(cuid())
+  workerProfileId String
+  workerProfile   WorkerProfile    @relation(fields: [workerProfileId], references: [id], onDelete: Cascade)
+  skillId         String
+  skill           Skill            @relation(fields: [skillId], references: [id])
+  proficiency     SkillProficiency @default(SKILLED)
+
+  @@unique([workerProfileId, skillId])
+}
+
+// ---------------------------------------------------------------------------
+// Jobs & applications
+// ---------------------------------------------------------------------------
+
+model Job {
+  id          String      @id @default(cuid())
+  clientId    String
+  client      User        @relation("ClientJobs", fields: [clientId], references: [id])
+  title       String
+  description String
+  categoryId  String
+  category    Category    @relation(fields: [categoryId], references: [id])
+  status      JobStatus   @default(DRAFT)
+  location    String?
+  startDate   DateTime?
+  endDate     DateTime?
+  hoursPerDay Int?
+  urgent      Boolean     @default(false)
+  fundingMode FundingMode @default(FUND_AT_HIRE)
+  publishedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  roleLineItems JobRoleLineItem[]
+  applications  JobApplication[]
+  hires         Hire[]
+}
+
+/// A single role-group within a job (a job can have several — e.g. 5 helpers,
+/// 2 decorators, 3 electricians). Each has its own headcount and per-person rate.
+model JobRoleLineItem {
+  id            String  @id @default(cuid())
+  jobId         String
+  job           Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  roleName      String
+  skillId       String?
+  skill         Skill?  @relation(fields: [skillId], references: [id])
+  headcount     Int     @default(1)
+  perPersonRate Decimal @db.Decimal(12, 2)
+  hiredCount    Int     @default(0)
+
+  applications JobApplication[]
+  hires        Hire[]
+}
+
+model JobApplication {
+  id             String            @id @default(cuid())
+  jobId          String
+  job            Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  roleLineItemId String
+  roleLineItem   JobRoleLineItem   @relation(fields: [roleLineItemId], references: [id], onDelete: Cascade)
+  workerId       String
+  worker         User              @relation("WorkerApplications", fields: [workerId], references: [id])
+  status         ApplicationStatus @default(APPLIED)
+  coverNote      String?
+  proposedRate   Decimal?          @db.Decimal(12, 2)
+  fitScore       Int? // 0-100, shown on CL-05
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([roleLineItemId, workerId])
+}
+
+// ---------------------------------------------------------------------------
+// Hires, contracts, phases (the escrow spine)
+// ---------------------------------------------------------------------------
+
+/// One accepted worker on one role line-item. Owns one or more Phases.
+model Hire {
+  id             String          @id @default(cuid())
+  jobId          String
+  job            Job             @relation(fields: [jobId], references: [id])
+  roleLineItemId String
+  roleLineItem   JobRoleLineItem @relation(fields: [roleLineItemId], references: [id])
+  clientId       String
+  client         User            @relation("ClientHires", fields: [clientId], references: [id])
+  workerId       String
+  worker         User            @relation("WorkerHires", fields: [workerId], references: [id])
+  status         HireStatus      @default(ACTIVE)
+  totalValue     Decimal         @db.Decimal(12, 2)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  contract      Contract?
+  phases        Phase[]
+  deliveryStake DeliveryStake?
+  reviews       Review[]
+  messages      Message[]
+  complaints    Complaint[]
+}
+
+model Contract {
+  id                  String    @id @default(cuid())
+  hireId              String    @unique
+  hire                Hire      @relation(fields: [hireId], references: [id], onDelete: Cascade)
+  totalValue          Decimal   @db.Decimal(12, 2)
+  startDate           DateTime?
+  endDate             DateTime?
+  scope               String
+  cancellationTerms   String?
+  onChainEscrowAddress String?
+  acceptedByClient    Boolean   @default(false)
+  acceptedByWorker    Boolean   @default(false)
+  acceptedAt          DateTime?
+  createdAt           DateTime  @default(now())
+}
+
+/// A funded, delivered, verified unit of work within a Hire. A single-session gig
+/// is one Phase; a multi-stage project has several, each with its own amount and
+/// delivery date, funded sequentially.
+model Phase {
+  id                   String      @id @default(cuid())
+  hireId               String
+  hire                 Hire        @relation(fields: [hireId], references: [id], onDelete: Cascade)
+  index                Int // order within the hire (1-based)
+  name                 String
+  amount               Decimal     @db.Decimal(12, 2)
+  dueDate              DateTime?
+  status               PhaseStatus @default(PENDING_FUNDING)
+  deliveredAt          DateTime?
+  // When the worker marks delivered, the verification window opens; the contract
+  // enforces on-chain that auto-release cannot happen before this deadline.
+  verificationDeadline DateTime?
+  releasedAt           DateTime?
+  reminderCount        Int         @default(0)
+  revisionCount        Int         @default(0)
+  onChainEscrowAddress String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  escrowTransactions EscrowTransaction[]
+
+  @@unique([hireId, index])
+}
+
+/// On-chain escrow events (fund / release / refund / split / stake ops). Also the
+/// ledger the earnings & payments screens read. One Phase can have several.
+model EscrowTransaction {
+  id           String         @id @default(cuid())
+  phaseId      String?
+  phase        Phase?         @relation(fields: [phaseId], references: [id])
+  type         EscrowTxType
+  status       EscrowTxStatus @default(PENDING)
+  amount       Decimal        @db.Decimal(12, 2)
+  fromAddress  String?
+  toAddress    String?
+  onChainTxHash String?
+  createdAt    DateTime       @default(now())
+}
+
+/// A worker's refundable deposit, locked for hires above the delivery-stake
+/// threshold (₹10,000 in PlatformConfig). Forfeited to the client on non-delivery.
+model DeliveryStake {
+  id            String      @id @default(cuid())
+  hireId        String      @unique
+  hire          Hire        @relation(fields: [hireId], references: [id], onDelete: Cascade)
+  amount        Decimal     @db.Decimal(12, 2)
+  status        StakeStatus @default(LOCKED)
+  lockedAt      DateTime    @default(now())
+  resolvedAt    DateTime?
+  onChainTxHash String?
+}
+
+// ---------------------------------------------------------------------------
+// Wallets
+// ---------------------------------------------------------------------------
+
+model Wallet {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  custodialAddress String   @unique
+  externalAddress  String?  @unique
+  // Cached balance for display; source of truth is on-chain (Phase 9).
+  balanceCache     Decimal  @default(0) @db.Decimal(14, 2)
+  currency         String   @default("INR")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Reviews, complaints, messaging, notifications
+// ---------------------------------------------------------------------------
+
+model Review {
+  id                  String          @id @default(cuid())
+  hireId              String
+  hire                Hire            @relation(fields: [hireId], references: [id], onDelete: Cascade)
+  direction           ReviewDirection
+  authorId            String
+  author              User            @relation("ReviewAuthor", fields: [authorId], references: [id])
+  subjectId           String
+  subject             User            @relation("ReviewSubject", fields: [subjectId], references: [id])
+  ratingOverall       Int
+  ratingPunctuality   Int?
+  ratingQuality       Int?
+  ratingCommunication Int?
+  text                String?
+  createdAt           DateTime        @default(now())
+
+  @@unique([hireId, direction])
+}
+
+/// Initial issue record (WK-17 / CL-13). If triaged to the FINANCIAL lane it is
+/// escalated to a DisputeCase in the ADMIN DB (referenced there by this id only).
+model Complaint {
+  id           String          @id @default(cuid())
+  hireId       String
+  hire         Hire            @relation(fields: [hireId], references: [id])
+  phaseId      String?
+  filedById    String
+  filedBy      User            @relation("ComplaintFiler", fields: [filedById], references: [id])
+  category     ComplaintCategory
+  triageLane   TriageLane?
+  description  String
+  evidenceRefs String[]        @default([])
+  status       ComplaintStatus @default(OPEN)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+}
+
+/// Hire-scoped chat (no open DMs). Retained as potential dispute evidence.
+model Message {
+  id       String    @id @default(cuid())
+  hireId   String
+  hire     Hire      @relation(fields: [hireId], references: [id], onDelete: Cascade)
+  senderId String
+  sender   User      @relation(fields: [senderId], references: [id])
+  body     String
+  sentAt   DateTime  @default(now())
+  readAt   DateTime?
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String?
+  linkUrl   String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}

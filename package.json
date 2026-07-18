@@ -6,21 +6,34 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:generate": "prisma generate --schema prisma/platform/schema.prisma && prisma generate --schema prisma/admin/schema.prisma",
+    "db:migrate:platform": "prisma migrate dev --schema prisma/platform/schema.prisma",
+    "db:migrate:admin": "prisma migrate dev --schema prisma/admin/schema.prisma",
+    "db:studio:platform": "prisma studio --schema prisma/platform/schema.prisma",
+    "db:studio:admin": "prisma studio --schema prisma/admin/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --schema prisma/platform/schema.prisma --force && prisma migrate reset --schema prisma/admin/schema.prisma --force && npm run db:seed",
+    "postinstall": "npm run db:generate"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
     "next": "16.2.10",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "prisma": "^6.19.3",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5"
   }
 }

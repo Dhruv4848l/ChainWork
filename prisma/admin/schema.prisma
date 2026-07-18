@@ -1,0 +1,225 @@
+// ============================================================================
+// ChainWork — ADMIN / JURY DATABASE  (physically separate from the Platform DB)
+//
+// BOUNDARY RULE (honor forever): this database NEVER holds a real foreign key into
+// the Platform DB. Fields like `platformUserId`, `subjectHireId`, `subjectPhaseId`,
+// `complaintId` are plain scalar ID references. Any admin screen that needs real
+// platform data goes through the bridge service (Phase 10), which queries the
+// Platform DB by that ID and returns a sanitized result. Relations DECLARED in this
+// file only ever connect admin models to other admin models.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../src/generated/admin"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("ADMIN_DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+/// Internal Super Admin roles (spec 11.1). JURY is the peer-juror role.
+enum AdminRole {
+  ROOT_SUPER_ADMIN
+  VERIFICATION_OFFICER
+  MODERATION_OFFICER
+  SUPPORT_AGENT
+  FINANCE_COMPLIANCE_OFFICER
+  ANALYST
+  JURY
+}
+
+enum JurorStatus {
+  PENDING
+  ACTIVE
+  ON_LEAVE
+  SUSPENDED
+}
+
+/// Case value tier -> panel size (3 / 5 / 7), always odd (PlatformConfig).
+enum ValueTier {
+  SMALL // 3 jurors
+  STANDARD // 5 jurors
+  LARGE // 7 jurors
+}
+
+/// Dispute lifecycle: evidence -> commit -> reveal -> verdict -> executed.
+enum DisputeStatus {
+  INTAKE
+  EVIDENCE
+  COMMIT
+  REVEAL
+  VERDICT
+  EXECUTED
+  APPEALED
+  CLOSED
+}
+
+enum VerdictChoice {
+  RELEASE_WORKER
+  REFUND_CLIENT
+  SPLIT
+}
+
+enum ConfigValueType {
+  STRING
+  NUMBER
+  PERCENT
+  DURATION
+  JSON
+}
+
+// ---------------------------------------------------------------------------
+// Admin users & audit
+// ---------------------------------------------------------------------------
+
+model AdminUser {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  name            String
+  role            AdminRole
+  // Mandatory 2FA for admin login (AUTH-11). TOTP secret + enabled flag.
+  totpSecret      String?
+  twoFactorEnabled Boolean  @default(false)
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  moderationActions ModerationAction[]
+  auditLogs         AuditLog[]
+}
+
+/// A vetted platform user who has opted into jury duty. Links to the Platform DB
+/// User by ID reference ONLY (platformUserId) — no cross-DB foreign key.
+model JurorProfile {
+  id             String      @id @default(cuid())
+  platformUserId String      @unique // ID reference into Platform DB (no FK)
+  displayName    String // cached for the roster (real name shown at this level only)
+  stakeBalance   Decimal     @default(0) @db.Decimal(12, 2)
+  agreementRate  Float       @default(0) // % votes agreeing with the majority
+  casesCount     Int         @default(0)
+  status         JurorStatus @default(ACTIVE)
+  createdAt      DateTime    @default(now())
+
+  assignments JuryAssignment[]
+  votes       JuryVote[]
+}
+
+/// Immutable record of every privileged admin/juror action (who/what/when/before/
+/// after/target). The app never updates or deletes rows here.
+model AuditLog {
+  id          String    @id @default(cuid())
+  actorAdminId String?
+  actor       AdminUser? @relation(fields: [actorAdminId], references: [id])
+  actorLabel  String? // e.g. juror label, when not an AdminUser
+  action      String
+  targetType  String // e.g. "DisputeCase", "PlatformConfig", "User"
+  targetId    String // ID reference (may point into either DB)
+  before      Json?
+  after       Json?
+  createdAt   DateTime  @default(now())
+}
+
+model ModerationAction {
+  id          String    @id @default(cuid())
+  adminUserId String
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id])
+  actionType  String // e.g. "JOB_HELD", "JOB_APPROVED", "USER_SUSPENDED"
+  targetType  String
+  targetId    String // ID reference into Platform DB (no FK)
+  reason      String?
+  createdAt   DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Dispute cases & commit-reveal jury
+// ---------------------------------------------------------------------------
+
+model DisputeCase {
+  id                   String        @id @default(cuid())
+  // ID references into the Platform DB (no FKs):
+  complaintId          String? // Platform Complaint.id
+  subjectHireId        String // Platform Hire.id
+  subjectPhaseId       String // Platform Phase.id
+  // Parties are stored ANONYMIZED at the case level.
+  clientLabel          String // e.g. "Client #4521"
+  workerLabel          String // e.g. "Worker #1187"
+  reason               String
+  valueTier            ValueTier
+  panelSize            Int
+  escrowAmount         Decimal       @db.Decimal(12, 2)
+  escrowInstanceAddress String?
+  status               DisputeStatus @default(INTAKE)
+  commitDeadline       DateTime?
+  revealDeadline       DateTime?
+  verdictChoice        VerdictChoice?
+  verdictSplitPct      Int? // worker's % when verdict is SPLIT
+  appealOfCaseId       String? // set when this case is an appeal of another
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  assignments JuryAssignment[]
+  votes       JuryVote[]
+  evidence    Evidence[]
+}
+
+model JuryAssignment {
+  id         String       @id @default(cuid())
+  caseId     String
+  case       DisputeCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  jurorId    String
+  juror      JurorProfile @relation(fields: [jurorId], references: [id])
+  assignedAt DateTime     @default(now())
+
+  @@unique([caseId, jurorId])
+}
+
+/// Commit-reveal ballot. During COMMIT only `commitHash` is stored; the actual
+/// choice + salt are revealed later and verified against the hash.
+model JuryVote {
+  id              String        @id @default(cuid())
+  caseId          String
+  case            DisputeCase   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  jurorId         String
+  juror           JurorProfile  @relation(fields: [jurorId], references: [id])
+  commitHash      String?
+  committedAt     DateTime?
+  revealedChoice  VerdictChoice?
+  revealedSplitPct Int?
+  salt            String?
+  revealedAt      DateTime?
+  isMajority      Boolean? // set at tally; drives stake refund vs slash
+  createdAt       DateTime      @default(now())
+
+  @@unique([caseId, jurorId])
+}
+
+model Evidence {
+  id               String      @id @default(cuid())
+  caseId           String
+  case             DisputeCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  submittedByLabel String // anonymized submitter label
+  fileRef          String?
+  hash             String // content hash anchored for tamper-evidence
+  createdAt        DateTime    @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Platform configuration (the tunable knobs — ADM-17)
+// ---------------------------------------------------------------------------
+
+model PlatformConfig {
+  id        String          @id @default(cuid())
+  key       String          @unique
+  value     String
+  valueType ConfigValueType @default(STRING)
+  category  String // e.g. "escrow", "jury", "fees", "kyc"
+  hint      String?
+  updatedAt DateTime        @updatedAt
+}
