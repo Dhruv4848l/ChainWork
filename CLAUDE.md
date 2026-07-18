@@ -99,7 +99,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 4** — Worker dashboard (all WK screens, mock money) — *done*
 - [x] **Phase 5** — Client dashboard (all CL screens + Post-a-Job, mock money) — *done · first demoable milestone*
 - [x] **Phase 6** — Escrow smart contracts (Solidity/Hardhat, testnet) — *done (local tests; Amoy deploy pending user)*
-- [ ] Phase 7 — Wire escrow into the app (live testnet)
+- [x] **Phase 7** — Wire escrow into the app (live on local chain; Amoy = swap env) — *done*
 - [ ] Phase 8 — Auto-release timer + reminder-cap worker
 - [ ] Phase 9 — Wallet layer (custodial + external)
 - [ ] Phase 10 — Admin/Jury console (separate app + DB + bridge service)
@@ -233,6 +233,41 @@ danger→ember. Keep status colors consistent everywhere.
   (gitignored — regenerated per deploy). ABI at `contracts/artifacts/contracts/PhaseEscrow.sol/PhaseEscrow.json`.
   Deploy: `npm test` (local), `npm run deploy:amoy` (needs `contracts/.env` — throwaway key + Amoy
   faucet MATIC; see `contracts/README.md`). **Amoy deploy is a user step (needs a testnet wallet).**
+
+## Escrow wired into the app (Phase 7)
+
+- **Chain service** in `src/lib/chain/`: `config.ts` (env + viem chain + ABIs; `phaseEscrow.abi.json`
+  is committed so the app doesn't depend on the contracts build), `keystore.ts` (dev custodial
+  wallets — userId→HD-account-index from the dev mnemonic, index 0 = platform relayer/attestor;
+  persisted to gitignored `.chain-keystore.json`; writes the real address to `Wallet.custodialAddress`),
+  `escrow.ts` (viem ops: `fundPhase`/`markDelivered`/`approveRelease`/`autoRelease`/`raiseDispute`/
+  `resolveDispute`/`refundToClient`/`lockStake`/`forfeitStake` + reads). Uses viem. Everything server-only.
+- **Real money actions replace the stubs:** client `fundPhaseAction` (KYC-gated + **sequential
+  funding** enforced; mints test stablecoin as a mock on-ramp, approves, funds — signed by the
+  client's custodial wallet), worker `markPhaseDeliveredAction` (relayer relays delivery + a
+  2-working-day deadline; on-chain timing gate), client `approvePhaseAction` (releases to the worker,
+  fires the **Forge Complete** animation), `requestChangesAction` (revision reset), `markNoShowAction`
+  (refund-to-client rollback + strike). Each records an `EscrowTransaction` with the real tx hash and
+  handles pending/success/error states.
+- **Forge Complete** celebration: `src/features/shared/ForgeComplete.tsx` (spark burst, keyframes in
+  globals.css), triggered by the `released` flag from the approve action.
+- **Env (`.env`, gitignored):** `CHAIN_RPC_URL`, `CHAIN_ID`, `CHAIN_MNEMONIC`, `CHAIN_RELAYER_INDEX`,
+  `CHAIN_ESCROW_ADDRESS`, `CHAIN_TOKEN_ADDRESS`. Local addresses are Hardhat-deterministic
+  (`PhaseEscrow 0xe7f1…0512`, `MockStablecoin 0x5FbD…0aa3`) so they stay valid across node restarts.
+- **VERIFIED end to end on the local chain:** funded a phase (mint→approve→fundPhase txs), worker
+  marked delivered (markDelivered tx), client approved (approveRelease tx) → the worker's **real
+  on-chain balance went 0 → 2,500 cwINR**, the phase escrow emptied to 0, and FUND/RELEASE tx hashes
+  were recorded. TS + prod build pass.
+
+## Running the app with the chain (Phase 7+)
+
+The escrow flows need the chain running. Local dev, three terminals:
+1. `cd contracts && npx hardhat node` (JSON-RPC on :8545)
+2. `cd contracts && npx hardhat run scripts/deploy.js --network localhost` (writes deployments +
+   the addresses that are already in `.env`)
+3. `npm run dev` (the app). Postgres (PG17 service) must be running too.
+For the public testnet instead: deploy to Amoy (`contracts/README.md`) and point the `CHAIN_*` env
+vars at Amoy + a real relayer key.
 
 ## Reference files (not in this repo — on the developer's machine)
 

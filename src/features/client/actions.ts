@@ -3,12 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
-import { requireRole } from "@/lib/auth/guards";
+import { requireRole, assertKycVerified } from "@/lib/auth/guards";
+import * as chain from "@/lib/chain/escrow";
+import { ESCROW_ADDRESS } from "@/lib/chain/config";
 
 export interface ActionState {
   ok?: boolean;
   error?: string;
   message?: string;
+  released?: boolean; // triggers the Forge Complete animation
+  txHash?: string;
 }
 
 function str(fd: FormData, key: string) {
@@ -150,30 +154,143 @@ export async function rejectApplicantAction(applicationId: string): Promise<Acti
 }
 
 // ---------------------------------------------------------------------------
-// STUBS — money / on-chain actions wired in Phase 7. Never fake success.
+// REAL on-chain money actions (Phase 7) — live against the PhaseEscrow contract.
 // ---------------------------------------------------------------------------
+
+/// Load a phase the client owns, or return null.
+async function loadOwnedPhase(userId: string, phaseId: string) {
+  const phase = await platformDb.phase.findUnique({
+    where: { id: phaseId },
+    include: { hire: { include: { client: true, worker: true } } },
+  });
+  if (!phase || phase.hire.clientId !== userId) return null;
+  return phase;
+}
+
+/** Fund a phase's escrow on-chain. KYC-gated; enforces sequential funding. */
 export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
-  await requireRole("CLIENT");
-  console.log(`TODO Phase 7: fund phase ${phaseId} on-chain (lock escrow). KYC gate applies.`);
-  return { message: "Escrow funding is wired to the contract in Phase 7 (behind the KYC gate)." };
+  const user = await requireRole("CLIENT");
+  const phase = await loadOwnedPhase(user.id, phaseId);
+  if (!phase) return { error: "Phase not found." };
+  if (phase.status !== "PENDING_FUNDING") return { error: "This phase isn't awaiting funding." };
+
+  // KYC gate — blocks money movement until VERIFIED (redirects to soft-block).
+  await assertKycVerified(user, `/dashboard/client/hires/${phase.hireId}`);
+
+  // Sequential funding: a phase can only be funded once the previous one released.
+  if (phase.index > 1) {
+    const prev = await platformDb.phase.findFirst({
+      where: { hireId: phase.hireId, index: phase.index - 1 },
+    });
+    if (prev && prev.status !== "RELEASED") {
+      return { error: `Fund Phase ${phase.index} unlocks once Phase ${phase.index - 1} closes.` };
+    }
+  }
+
+  try {
+    const txHash = await chain.fundPhase(
+      phase.id,
+      phase.hire.clientId,
+      phase.hire.workerId,
+      Number(phase.amount)
+    );
+    await platformDb.$transaction([
+      platformDb.phase.update({
+        where: { id: phase.id },
+        data: { status: "FUNDED", onChainEscrowAddress: ESCROW_ADDRESS },
+      }),
+      platformDb.contract.updateMany({
+        where: { hireId: phase.hireId, onChainEscrowAddress: null },
+        data: { onChainEscrowAddress: ESCROW_ADDRESS },
+      }),
+      platformDb.escrowTransaction.create({
+        data: { phaseId: phase.id, type: "FUND", status: "CONFIRMED", amount: phase.amount, onChainTxHash: txHash },
+      }),
+      platformDb.notification.create({
+        data: { userId: phase.hire.workerId, type: "ESCROW", title: "Escrow funded", body: `${user.name} funded "${phase.name}". You can start work.` },
+      }),
+    ]);
+    revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
+    return { ok: true, message: "Escrow funded on-chain — funds are locked.", txHash };
+  } catch (e) {
+    console.error("fundPhase failed:", e);
+    return { error: "The funding transaction failed. Please try again." };
+  }
 }
 
+/** Approve a delivered phase → the contract releases the escrow to the worker. */
 export async function approvePhaseAction(phaseId: string): Promise<ActionState> {
-  await requireRole("CLIENT");
-  console.log(`TODO Phase 7: approve + release phase ${phaseId} to the worker on-chain.`);
-  return { message: "Approve & Release is wired to the contract in Phase 7." };
+  const user = await requireRole("CLIENT");
+  const phase = await loadOwnedPhase(user.id, phaseId);
+  if (!phase) return { error: "Phase not found." };
+  if (phase.status !== "DELIVERED" && phase.status !== "VERIFICATION_WINDOW_OPEN" && phase.status !== "FUNDED") {
+    return { error: "This phase isn't ready to approve." };
+  }
+
+  try {
+    const txHash = await chain.approveRelease(phase.id);
+    const bal = await chain.balanceOfInr((await chain.readEscrow(phase.id)).worker);
+    await platformDb.$transaction([
+      platformDb.phase.update({ where: { id: phase.id }, data: { status: "RELEASED", releasedAt: new Date() } }),
+      platformDb.escrowTransaction.create({
+        data: { phaseId: phase.id, type: "RELEASE", status: "CONFIRMED", amount: phase.amount, onChainTxHash: txHash },
+      }),
+      platformDb.wallet.updateMany({ where: { userId: phase.hire.workerId }, data: { balanceCache: bal } }),
+      platformDb.notification.create({
+        data: { userId: phase.hire.workerId, type: "PAYMENT", title: "Payment released", body: `${phase.name} was approved — funds released to your wallet.` },
+      }),
+    ]);
+    revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
+    return { ok: true, message: "Approved — funds released to the worker.", released: true, txHash };
+  } catch (e) {
+    console.error("approveRelease failed:", e);
+    return { error: "The release transaction failed. Please try again." };
+  }
 }
 
+/** Request changes: resets the verification window and bumps the revision counter. */
 export async function requestChangesAction(phaseId: string): Promise<ActionState> {
-  await requireRole("CLIENT");
-  console.log(`TODO Phase 7: request changes on phase ${phaseId} (reset verification window, Rev++).`);
-  return { message: "Request Changes resets the verification window in Phase 7." };
+  const user = await requireRole("CLIENT");
+  const phase = await loadOwnedPhase(user.id, phaseId);
+  if (!phase) return { error: "Phase not found." };
+  if (phase.revisionCount >= 2) {
+    return { error: "Revision limit reached — please file a complaint instead of requesting more changes." };
+  }
+  await platformDb.phase.update({
+    where: { id: phase.id },
+    data: { status: "IN_PROGRESS", revisionCount: { increment: 1 }, verificationDeadline: null },
+  });
+  revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
+  return { ok: true, message: `Changes requested (revision ${phase.revisionCount + 1} of 2). The window resets on redelivery.` };
 }
 
+/** Mark no-show: roll the funded phase's escrow back to the client on-chain. */
 export async function markNoShowAction(hireId: string): Promise<ActionState> {
-  await requireRole("CLIENT");
-  console.log(`TODO Phase 8: mark no-show for hire ${hireId} (opens contest window).`);
-  return { message: "No-show handling arrives with the timing engine in Phase 8." };
+  const user = await requireRole("CLIENT");
+  const hire = await platformDb.hire.findFirst({
+    where: { id: hireId, clientId: user.id },
+    include: { phases: { orderBy: { index: "asc" } }, deliveryStake: true },
+  });
+  if (!hire) return { error: "Hire not found." };
+  const funded = hire.phases.find((p) => ["FUNDED", "IN_PROGRESS", "DELIVERED"].includes(p.status));
+  if (!funded) return { error: "No funded phase to roll back." };
+
+  try {
+    const txHash = await chain.refundToClient(funded.id);
+    await platformDb.$transaction([
+      platformDb.phase.update({ where: { id: funded.id }, data: { status: "AUTO_CANCELLED" } }),
+      platformDb.hire.update({ where: { id: hire.id }, data: { status: "NO_SHOW_FLAGGED" } }),
+      platformDb.escrowTransaction.create({
+        data: { phaseId: funded.id, type: "REFUND", status: "CONFIRMED", amount: funded.amount, onChainTxHash: txHash },
+      }),
+      platformDb.user.update({ where: { id: hire.workerId }, data: { strikes: { increment: 1 } } }),
+    ]);
+    revalidatePath(`/dashboard/client/hires/${hireId}`);
+    return { ok: true, message: "Escrow rolled back to you; a strike was applied to the worker.", txHash };
+  } catch (e) {
+    console.error("markNoShow failed:", e);
+    return { error: "The rollback transaction failed. Please try again." };
+  }
 }
 
 export async function proposeSettlementAction(hireId: string): Promise<ActionState> {

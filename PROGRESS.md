@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~50% — Phases 0–6 complete, 7 of 14 phases done. Halfway. The escrow layer exists.**
+**Overall: ~57% — Phases 0–7 complete, 8 of 14 phases done. The payments are real (on testnet).**
 
-_Last updated: 2026-07-18 (Phase 6)._
+_Last updated: 2026-07-18 (Phase 7)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -17,6 +17,7 @@ _Last updated: 2026-07-18 (Phase 6)._
 | 4 | Worker dashboard (all WK screens, mock money) | ✅ Done | 100% |
 | 5 | Client dashboard + Post-a-Job (mock money) ◀ **first demoable** | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ **the heart** | ✅ Done | 100% |
+| 7 | Wire escrow into the app (live on-chain) | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
 | 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
@@ -152,3 +153,20 @@ _Last updated: 2026-07-18 (Phase 6)._
   instructions in `contracts/README.md`. **Everything runs locally; Amoy deploy is a user step**
   (needs a throwaway testnet wallet + free faucet MATIC).
 - **Golden rule honored:** testnet only, never mainnet, until a professional audit.
+
+## Phase 7 — what got built (done 2026-07-18) · the payments move for real
+
+- **The dashboard money buttons now make real on-chain transactions.** A viem-based chain service
+  (`src/lib/chain/`) connects the app to the deployed `PhaseEscrow` contract, with dev custodial
+  wallets and a platform relayer/attestor.
+- **Fund → Deliver → Approve → Release runs live:** the client funds a phase (KYC-gated, sequential
+  funding enforced, test stablecoin minted as a mock fiat on-ramp), the worker marks it delivered
+  (on-chain, with the verification deadline the contract enforces), and the client approves to
+  release — the escrow pays out to the worker's wallet.
+- **The Forge Complete animation** fires on release; every action records the real on-chain tx hash
+  in the transaction history.
+- **Verified end to end on a local chain:** funded ₹2,500, delivered, approved — the worker's actual
+  on-chain balance went **0 → 2,500**, the phase escrow emptied to **0**, and the FUND + RELEASE tx
+  hashes were captured. Runs the same against Polygon Amoy by swapping the env vars.
+- Still testnet only until an audit. Running it needs the Hardhat node + a deploy + Postgres (see
+  CLAUDE.md "Running the app with the chain").

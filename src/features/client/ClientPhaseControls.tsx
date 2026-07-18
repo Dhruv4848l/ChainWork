@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { fundPhaseAction, approvePhaseAction, requestChangesAction } from "./actions";
+import { ForgeComplete } from "@/features/shared/ForgeComplete";
 import { formatInr } from "@/lib/format";
 
 /*
@@ -26,9 +27,14 @@ export function ClientPhaseControls({
   revisionCount: number;
 }) {
   const [msg, setMsg] = useState<string | null>(null);
+  const [forge, setForge] = useState(false);
   const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ message?: string; error?: string }>) =>
-    start(async () => setMsg((await fn()).message ?? null));
+  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean }>) =>
+    start(async () => {
+      const r = await fn();
+      setMsg(r.message ?? r.error ?? null);
+      if (r.released) setForge(true);
+    });
 
   if (status === "PENDING_FUNDING") {
     if (!fundable) {
@@ -47,6 +53,7 @@ export function ClientPhaseControls({
   if (status === "DELIVERED" || status === "VERIFICATION_WINDOW_OPEN") {
     return (
       <div className="flex flex-wrap items-center gap-2">
+        <ForgeComplete show={forge} onDone={() => setForge(false)} />
         <Button variant="success" size="sm" disabled={pending} onClick={() => run(() => approvePhaseAction(phaseId))}>
           Approve — Release {formatInr(amount)}
         </Button>

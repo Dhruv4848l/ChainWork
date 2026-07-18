@@ -4,6 +4,19 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
 import { requireRole } from "@/lib/auth/guards";
+import * as chain from "@/lib/chain/escrow";
+
+/** A simple 2-working-day deadline (skips weekends). Phase 8 adds the holiday calendar. */
+function verificationDeadline(): Date {
+  const d = new Date();
+  let added = 0;
+  while (added < 2) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) added++;
+  }
+  return d;
+}
 
 export interface ActionState {
   ok?: boolean;
@@ -108,9 +121,40 @@ export async function applyToJobAction(
 // will implement them.
 // ---------------------------------------------------------------------------
 export async function markPhaseDeliveredAction(phaseId: string): Promise<ActionState> {
-  await requireRole("WORKER");
-  console.log(`TODO Phase 7: mark phase ${phaseId} delivered on-chain (open verification window)`);
-  return { message: "Delivery marking is wired to the escrow contract in Phase 7." };
+  const user = await requireRole("WORKER");
+  const phase = await platformDb.phase.findUnique({
+    where: { id: phaseId },
+    include: { hire: true },
+  });
+  if (!phase || phase.hire.workerId !== user.id) return { error: "Phase not found." };
+  if (!["FUNDED", "IN_PROGRESS"].includes(phase.status)) {
+    return { error: "This phase isn't ready to deliver." };
+  }
+
+  const deadline = verificationDeadline();
+  try {
+    // On-chain: mark delivered only if the escrow is still FUNDED (first delivery).
+    // After a Request Changes round the on-chain phase is already DELIVERED, so we
+    // just reset the off-chain window on redelivery.
+    const onchain = await chain.readEscrow(phase.id);
+    if (onchain.status === "FUNDED") {
+      await chain.markDelivered(phase.id, Math.floor(deadline.getTime() / 1000));
+    }
+    await platformDb.$transaction([
+      platformDb.phase.update({
+        where: { id: phase.id },
+        data: { status: "VERIFICATION_WINDOW_OPEN", deliveredAt: new Date(), verificationDeadline: deadline },
+      }),
+      platformDb.notification.create({
+        data: { userId: phase.hire.clientId, type: "ESCROW", title: "Phase delivered", body: `"${phase.name}" was delivered — approve or request changes before the window closes.` },
+      }),
+    ]);
+    revalidatePath(`/dashboard/worker/hires/${phase.hireId}`);
+    return { ok: true, message: "Marked delivered — the client's verification window is now open." };
+  } catch (e) {
+    console.error("markDelivered failed:", e);
+    return { error: "The delivery transaction failed. Please try again." };
+  }
 }
 
 export async function withdrawAction(): Promise<ActionState> {
