@@ -4,7 +4,8 @@ import { Card, StatusBadge } from "@/components/ui";
 import { requireAdminAccess } from "@/lib/admin/guards";
 import { adminDb } from "@/lib/adminDb";
 import { bridgePhaseSummary } from "@/lib/admin/bridge";
-import { formatInr, formatDate } from "@/lib/format";
+import { JuryVoteControls } from "@/features/admin/JuryVoteControls";
+import { formatInr } from "@/lib/format";
 
 /*
   ADM-12 Case detail. Shows the anonymized case, the subject phase (resolved through
@@ -22,6 +23,11 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
   const phase = await bridgePhaseSummary(c.subjectPhaseId); // bridge — platform data by id
 
   const revealed = c.votes.filter((v) => v.revealedChoice != null).length;
+  const panel = c.assignments.map((a) => {
+    const vote = c.votes.find((v) => v.jurorId === a.jurorId);
+    return { jurorId: a.jurorId, name: a.juror.displayName, committed: !!vote?.commitHash, revealed: !!vote?.revealedChoice, choice: vote?.revealedChoice ?? null };
+  });
+  const quorumReached = revealed * 2 > c.panelSize;
 
   return (
     <div className="max-w-4xl">
@@ -66,11 +72,22 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ id:
               <span className="text-[11px] text-ink3">{a.juror.agreementRate.toFixed(0)}% agree</span>
             </div>
           ))}
-          <p className="mt-3 text-[11px] leading-relaxed text-ink3">
-            Commit-reveal voting + verdict execution arrive in Phase 11. Tied splits resolve to the
-            median %.
-          </p>
+          {c.verdictChoice && (
+            <p className="mt-3 rounded-lg border border-emerald/30 bg-emerald/[0.06] px-3 py-2 text-[12px] text-emerald">
+              Verdict: {c.verdictChoice}{c.verdictSplitPct != null ? ` · ${c.verdictSplitPct}% to worker` : ""} — ready to settle (ADM-08).
+            </p>
+          )}
         </Card>
+      </div>
+
+      <div className="mt-3.5">
+        <JuryVoteControls
+          caseId={c.id}
+          status={c.status}
+          panel={panel}
+          quorumReached={quorumReached}
+          hasVerdict={c.verdictChoice != null}
+        />
       </div>
     </div>
   );

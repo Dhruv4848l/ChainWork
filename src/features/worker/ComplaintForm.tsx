@@ -18,6 +18,8 @@ export function ComplaintForm({
   defaultHireId?: string;
 }) {
   const [category, setCategory] = useState(CATEGORIES[0]);
+  const [hireId, setHireId] = useState(defaultHireId ?? hires[0]?.id ?? "");
+  const [description, setDescription] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -26,7 +28,8 @@ export function ComplaintForm({
       <div>
         <Label>Related hire</Label>
         <select
-          defaultValue={defaultHireId}
+          value={hireId}
+          onChange={(e) => setHireId(e.target.value)}
           className="w-full rounded-[10px] border border-line-strong bg-bg px-4 py-3 text-sm text-ink focus:border-bronze focus:outline-none"
         >
           {hires.length === 0 && <option>No hires available</option>}
@@ -56,6 +59,8 @@ export function ComplaintForm({
 
       <textarea
         rows={4}
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
         placeholder="Describe what happened, factually — dates, amounts, what was agreed"
         className="rounded-[10px] border border-line-strong bg-bg px-4 py-3 text-sm text-ink placeholder:text-ink3 focus:border-bronze focus:outline-none focus:ring-2 focus:ring-bronze"
       />
@@ -69,7 +74,7 @@ export function ComplaintForm({
         variant="primary"
         disabled={pending || hires.length === 0}
         className="self-end"
-        onClick={() => start(async () => setMsg((await submitComplaintAction()).message ?? null))}
+        onClick={() => start(async () => { const r = await submitComplaintAction(hireId, category, description); setMsg(r.message ?? r.error ?? null); })}
       >
         Submit Complaint
       </Button>

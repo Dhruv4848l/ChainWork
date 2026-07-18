@@ -145,6 +145,34 @@ export async function bridgeTriageComplaint(complaintId: string, lane: "TRIVIAL"
   });
 }
 
+/** Everything the jury escalation needs about a complaint — resolved by id. */
+export async function bridgeComplaintForEscalation(complaintId: string) {
+  const c = await platformDb.complaint.findUnique({
+    where: { id: complaintId },
+    include: { hire: { include: { phases: { orderBy: { index: "asc" } } } } },
+  });
+  if (!c) return null;
+  // The disputed phase: the one referenced by the complaint, else the current active phase.
+  const phase = (c.phaseId && c.hire.phases.find((p) => p.id === c.phaseId)) ||
+    c.hire.phases.find((p) => ["FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN", "DISPUTED"].includes(p.status)) ||
+    c.hire.phases[0];
+  if (!phase) return null;
+  return {
+    complaintId: c.id,
+    subjectHireId: c.hireId,
+    subjectPhaseId: phase.id,
+    clientUserId: c.hire.clientId,
+    workerUserId: c.hire.workerId,
+    escrowAmountInr: Number(phase.amount),
+    reason: `${c.category}: ${c.description}`.slice(0, 200),
+  };
+}
+
+/** Freeze the phase in the Platform DB when a dispute opens (mirrors the on-chain freeze). */
+export async function bridgeMarkPhaseDisputed(phaseId: string) {
+  await platformDb.phase.updateMany({ where: { id: phaseId }, data: { status: "DISPUTED" } });
+}
+
 // ---- ongoing work (ADM-07) ----
 export async function bridgeOngoing() {
   const hires = await platformDb.hire.findMany({

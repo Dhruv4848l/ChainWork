@@ -103,7 +103,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 8** — Auto-release timer + reminder-cap worker — *done*
 - [x] **Phase 9** — Wallet layer (custodial + external) — *done*
 - [x] **Phase 10** — Admin/Jury console (separate app + DB + bridge service) — *done*
-- [ ] Phase 11 — Complaint → triage → commit-reveal jury → verdict
+- [x] **Phase 11** — Complaint → triage → commit-reveal jury → verdict — *done*
 - [ ] Phase 12 — Notifications, messaging, reviews
 - [ ] Phase 13 — Hardening (edge cases, tests, security, mobile/a11y, pre-mainnet checklist)
 
@@ -335,12 +335,49 @@ vars at Amoy + a real relayer key.
   after row. ADM-19 reads it.
 - **Screens** (`src/app/admin/(console)/*`, ADM-02..19): dashboard, users (KYC queue)+[id], jobs,
   blog-moderation, complaints (4-lane triage), ongoing, settlements (executes verdict on-chain via
-  the contract), confirmations (Phase 8 data via bridge), payments, disputes+[id] (case shell —
-  voting is Phase 11), jury+[id], reports, settings (edits PlatformConfig → audit), roles, audit.
+  the contract), confirmations (Phase 8 data via bridge), payments, disputes+[id] (full commit-reveal
+  voting console, Phase 11), jury+[id], reports, settings (edits PlatformConfig → audit), roles, audit.
 - **Verified live:** separate login + real 2FA; consumer cookie doesn't grant admin; Analyst nav
   restricted to 3 sections + bounced from /admin/settings; login written to the audit log; bridge is
   the sole platform-DB importer. Admin login: `root@chainwork.local` / `admin123` + the console-logged
   2FA code.
+
+## Peer-jury dispute engine (Phase 11)
+
+- **Engine: `src/lib/admin/jury.ts`** (admin-DB only; parties passed in via the bridge, never a direct
+  platform read). Commit hash is canonical: `voteCommitHash(choice, splitPct, salt) =
+  keccak256(toHex(`choice|splitPct|salt`))` — the client (`JuryVoteControls.tsx`) computes the SAME
+  hash with viem, so it must match server-side on reveal.
+- **Filing is real** both sides: WK-17 `ComplaintForm` / CL-13 `ClientComplaintForm` →
+  `submitComplaintAction(hireId, category, description)` writes a real `Complaint` (client side also
+  records the subject `phaseId`).
+- **Triage (ADM-05, `triageComplaintAction`)** has 4 lanes; the **FINANCIAL** lane:
+  `bridge.bridgeComplaintForEscalation(id)` → `jury.escalateToJury(...)` → `bridge.bridgeMarkPhaseDisputed`.
+  `escalateToJury` freezes escrow on-chain best-effort (`chain.raiseDispute`, try/catch — a seed phase
+  may be unfunded), opens an **anonymized** `DisputeCase` (`anonLabel` → "Client #1234"), sets the
+  value tier + panel (**SMALL <₹5000→3, STANDARD <₹20000→5, LARGE→7**), and assigns a random panel of
+  ACTIVE jurors **excluding both parties** (conflict guard), creating a `JuryAssignment` + empty
+  `JuryVote` per juror.
+- **Commit-reveal:** `commitVote` stores the hash only, refuses a second commit, and flips the case
+  `COMMIT→REVEAL` once every panellist has committed. `revealVote` recomputes the hash and **rejects a
+  mismatch** (can't change a vote after seeing others); stores `revealedSplitPct` only for SPLIT.
+- **Tally: `tallyAndFinalize`** — quorum = `revealed*2 > panelSize`; the majority choice wins; a SPLIT
+  verdict's % is the **median** of proposed %s (`median()`), not the mean. Settles stakes (majority
+  `+FEE(100)`, minority `-SLASH(200)`), updates each juror's `agreementRate`, sets `verdictChoice`/
+  `verdictSplitPct` and status `VERDICT`. The frozen escrow is then directed on-chain by the existing
+  ADM-08 `settleDisputeAction` (maps the verdict to worker basis-points).
+- **Appeals: `appealCase`** — once per case only; opens a fresh 7-juror `DisputeCase`
+  (`appealOfCaseId`) and marks the original `APPEALED`.
+- **Actions** (`src/features/admin/actions.ts`): `commitVoteAction`/`revealVoteAction`/
+  `finalizeVerdictAction`/`appealCaseAction`, all audit-logged; `assertJurorOnCase` gates commit/reveal
+  to a JURY/ROOT admin actually on the panel.
+- **Verified** by driving the real engine through a throwaway `api/verify11` route (since deleted;
+  it parked seeded jurors as ON_LEAVE so the random panel drew only test jurors, then restored them):
+  escalate → 5-panel; all commit → REVEAL; **wrong-salt reveal rejected**; 3 SPLIT(60/40/50) + 1
+  minority reveal → verdict **SPLIT @ median 50**; majority stakes 1000→1100 (rep 84%), minority
+  1000→800 (rep 64%); first appeal opened, second rejected. To re-verify later, recreate that route
+  or add a `node:test`. NOTE: the on-chain freeze/settle paths themselves were proven in Phases 7/10;
+  the verify route used a synthetic phase id so its `frozen` was false by design.
 
 ## Reference files (not in this repo — on the developer's machine)
 

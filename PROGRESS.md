@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~79% — Phases 0–10 complete, 11 of 14 phases done. The admin console is live.**
+**Overall: ~86% — Phases 0–11 complete, 12 of 14 phases done. The peer-jury dispute engine is live.**
 
-_Last updated: 2026-07-18 (Phase 10)._
+_Last updated: 2026-07-19 (Phase 11)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -21,12 +21,7 @@ _Last updated: 2026-07-18 (Phase 10)._
 | 8 | Auto-release timer + reminder-cap worker | ✅ Done | 100% |
 | 9 | Wallet layer (custodial + external) | ✅ Done | 100% |
 | 10 | Admin/Jury console (separate app + DB + bridge) | ✅ Done | 100% |
-| 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
-| 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
-| 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
-| 9 | Wallet layer (custodial + external) | ⬜ Not started | 0% |
-| 10 | Admin/Jury console (separate app + DB + bridge) | ⬜ Not started | 0% |
-| 11 | Complaint → commit-reveal jury → verdict | ⬜ Not started | 0% |
+| 11 | Complaint → commit-reveal jury → verdict | ✅ Done | 100% |
 | 12 | Notifications, messaging, reviews | ⬜ Not started | 0% |
 | 13 | Hardening (edge cases, tests, security, a11y) | ⬜ Not started | 0% |
 
@@ -224,3 +219,27 @@ _Last updated: 2026-07-18 (Phase 10)._
 - **Every privileged action writes to the immutable audit log.**
 - **Verified live:** logged in with real 2FA; confirmed session separation, role scoping (nav +
   route), the audited login, and the bridge-only data boundary.
+
+## Phase 11 — what got built (done 2026-07-19) · the peer-jury dispute engine
+
+- **Filing a complaint is now real** on both sides (WK-17, CL-13): the worker/client picks the hire,
+  category, and description; it writes a real `Complaint` tied to the phase — no more stub.
+- **4-lane triage (ADM-05):** an admin routes each complaint — dismiss, warn/moderate, mutual
+  settlement, or **escalate to the jury (the financial lane)**. Escalation freezes the phase's escrow
+  **on-chain** (best-effort `raiseDispute`), then opens an **anonymized** case (parties shown only as
+  "Client #1234 / Worker #5678") with a value-tiered staked panel: **SMALL <₹5k → 3 jurors,
+  STANDARD <₹20k → 5, LARGE → 7**, drawn at random and **excluding either party** (conflict guard).
+- **Commit-reveal voting (ADM-12):** each juror first commits a **hash** of their vote
+  (`keccak256(choice|split%|salt)`) — hidden from everyone — then reveals it later. A reveal that
+  **doesn't match the commitment is rejected**, so votes can't be changed after seeing others'. Once
+  all commit, the case auto-opens the reveal window.
+- **Verdict + settlement:** on quorum (a strict majority revealed) the tally picks the majority
+  choice; **tied split proposals resolve to the median %** (not the mean). The verdict then directs
+  the frozen escrow on-chain via the existing ADM-08 settlement. **Juror stakes settle** — majority
+  refunded **+fee**, minority **slashed** — and each juror's agreement-rate reputation updates.
+- **Appeals:** a case can be appealed **once**, to a larger (7) panel; a second appeal is refused.
+- **Verified end to end** by driving the real engine: escalate → 5-juror panel; all commit → status
+  flips to REVEAL; a **wrong-salt reveal was rejected**; 3 SPLIT (60/40/50) + 1 minority reveal →
+  verdict **SPLIT @ median 50%**; majority stakes **1000 → 1100 (+fee, rep 84%)**, minority
+  **1000 → 800 (slashed, rep 64%)**; first appeal opened, second **rejected**. Every privileged
+  action (escalate, commit, reveal, finalize, appeal) writes to the immutable audit log.

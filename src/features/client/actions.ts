@@ -311,8 +311,29 @@ export async function sendMessageAction(): Promise<ActionState> {
   return { message: "Messaging is fully wired in Phase 12." };
 }
 
-export async function submitComplaintAction(): Promise<ActionState> {
-  await requireRole("CLIENT");
-  console.log("TODO Phase 11: file complaint -> triage -> jury pipeline.");
-  return { message: "Complaint filing routes into the jury pipeline in Phase 11." };
+const CLIENT_CATEGORY: Record<string, "QUALITY" | "NO_SHOW" | "CONDUCT" | "OTHER"> = {
+  "Work quality": "QUALITY", "No-show": "NO_SHOW", Behavior: "CONDUCT", Other: "OTHER",
+};
+
+/** File a complaint on a hire (CL-13). Lands in triage (ADM-06); may escalate to a jury. */
+export async function submitComplaintAction(hireId: string, category: string, description: string): Promise<ActionState> {
+  const user = await requireRole("CLIENT");
+  const hire = await platformDb.hire.findFirst({
+    where: { id: hireId, clientId: user.id },
+    include: { phases: { where: { status: { in: ["FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN"] } }, take: 1 } },
+  });
+  if (!hire) return { error: "Hire not found." };
+  if (!description.trim()) return { error: "Describe what happened." };
+  await platformDb.complaint.create({
+    data: {
+      hireId,
+      phaseId: hire.phases[0]?.id ?? null,
+      filedById: user.id,
+      category: CLIENT_CATEGORY[category] ?? "OTHER",
+      description: description.trim(),
+      status: "OPEN",
+    },
+  });
+  revalidatePath("/dashboard/client/complaint");
+  return { ok: true, message: "Complaint filed — it's now in the platform's triage queue." };
 }

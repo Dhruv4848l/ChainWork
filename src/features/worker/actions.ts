@@ -172,8 +172,25 @@ export async function sendMessageAction(): Promise<ActionState> {
   return { message: "Messaging is fully wired in Phase 12." };
 }
 
-export async function submitComplaintAction(): Promise<ActionState> {
-  await requireRole("WORKER");
-  console.log("TODO Phase 11: file complaint -> triage -> jury pipeline.");
-  return { message: "Complaint filing routes into the jury pipeline in Phase 11." };
+const WORKER_CATEGORY: Record<string, "PAYMENT" | "QUALITY" | "CONDUCT" | "DAMAGE" | "OTHER"> = {
+  "Payment issue": "PAYMENT", "Work quality": "QUALITY", Behavior: "CONDUCT", Safety: "DAMAGE", Other: "OTHER",
+};
+
+/** File a complaint on a hire (WK-17). It lands in triage (ADM-06) and may escalate to a jury. */
+export async function submitComplaintAction(hireId: string, category: string, description: string): Promise<ActionState> {
+  const user = await requireRole("WORKER");
+  const hire = await platformDb.hire.findFirst({ where: { id: hireId, workerId: user.id } });
+  if (!hire) return { error: "Hire not found." };
+  if (!description.trim()) return { error: "Describe what happened." };
+  await platformDb.complaint.create({
+    data: {
+      hireId,
+      filedById: user.id,
+      category: WORKER_CATEGORY[category] ?? "OTHER",
+      description: description.trim(),
+      status: "OPEN",
+    },
+  });
+  revalidatePath("/dashboard/worker/complaint");
+  return { ok: true, message: "Complaint filed — it's now in the platform's triage queue." };
 }
