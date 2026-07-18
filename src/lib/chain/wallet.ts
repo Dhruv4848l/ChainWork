@@ -43,18 +43,33 @@ export interface WalletSummary {
   payoutAddress: `0x${string}`;
   balanceInr: number;
   currency: string;
+  /** false when the on-chain read failed and balanceInr is the last cached value. */
+  live: boolean;
 }
 
-/** Full wallet view: addresses + the live on-chain balance of the payout address. */
+/**
+ * Full wallet view: addresses + the on-chain balance of the payout address.
+ * Resilient by design: a read-only balance view must never take down the page, so if
+ * the RPC is unreachable (e.g. the chain node is down) we fall back to the last cached
+ * balance and flag `live: false`. Money MOVEMENTS (withdraw/top-up) still require the
+ * chain and fail loudly — only this read degrades.
+ */
 export async function getWalletSummary(userId: string): Promise<WalletSummary> {
   const { address: custodial } = await provisionWallet(userId);
   const wallet = await platformDb.wallet.findUnique({ where: { userId } });
   const external = wallet?.externalAddress ?? null;
   const payout = (external && isAddress(external) ? external : custodial) as `0x${string}`;
-  const balanceInr = toInr(await balanceWei(payout));
-  // keep the cached balance roughly in sync for cheap reads elsewhere
-  await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: balanceInr } });
-  return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, currency: "INR" };
+
+  try {
+    const balanceInr = toInr(await balanceWei(payout));
+    // keep the cached balance roughly in sync for cheap reads elsewhere
+    await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: balanceInr } });
+    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, currency: "INR", live: true };
+  } catch (e) {
+    console.warn(`getWalletSummary: on-chain read failed, using cached balance — ${(e as Error).message.slice(0, 80)}`);
+    const balanceInr = wallet ? Number(wallet.balanceCache) : 0;
+    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, currency: "INR", live: false };
+  }
 }
 
 /**

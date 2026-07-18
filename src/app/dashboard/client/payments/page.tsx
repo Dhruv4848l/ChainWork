@@ -23,7 +23,7 @@ export default async function ClientPaymentsPage() {
       <PageTitle action={<AddFundsButton />}>Payments &amp; Escrow</PageTitle>
 
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
-        <StatCard label="Wallet balance" value={formatInr(wallet.balanceInr)} accent="bronze" sub="live on-chain, in ₹" />
+        <StatCard label="Wallet balance" value={formatInr(wallet.balanceInr)} accent="bronze" sub={wallet.live ? "live on-chain, in ₹" : "cached · chain offline"} />
         <StatCard label="In escrow" value={formatInr(pay.escrowTotal)} accent="info" />
         <StatCard label="Released to workers" value={formatInr(pay.releasedTotal)} accent="emerald" />
         <StatCard label="Escrow reliability" value={`${reliability}%`} accent="emerald" />
