@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~64% — Phases 0–8 complete, 9 of 14 phases done. Escrow timing is automated.**
+**Overall: ~71% — Phases 0–9 complete, 10 of 14 phases done. Wallets are real.**
 
-_Last updated: 2026-07-18 (Phase 8)._
+_Last updated: 2026-07-18 (Phase 9)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -19,6 +19,7 @@ _Last updated: 2026-07-18 (Phase 8)._
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ **the heart** | ✅ Done | 100% |
 | 7 | Wire escrow into the app (live on-chain) | ✅ Done | 100% |
 | 8 | Auto-release timer + reminder-cap worker | ✅ Done | 100% |
+| 9 | Wallet layer (custodial + external) | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
 | 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
@@ -189,3 +190,19 @@ _Last updated: 2026-07-18 (Phase 8)._
 - **Verified end to end on-chain:** a phase auto-released after exactly 2 reminders → the worker's
   on-chain balance went 0 → ₹3,000 → a repeat tick did nothing. Feeds the ADM-09 "pending
   confirmations" data for Phase 10.
+
+## Phase 9 — what got built (done 2026-07-18) · the wallet layer
+
+- **Custodial wallets (the default, invisible experience):** auto-provisioned, balance shown in
+  rupees, no keys or gas for the user. A mocked fiat **on-ramp** (Add Funds) and **off-ramp**
+  (Withdraw to Bank/UPI) — both real on-chain moves under the hood.
+- **External self-custody wallets:** a Connect-your-own-wallet flow (MetaMask / Coinbase via the
+  injected provider) with a **sign-to-verify-ownership** step — the signature proves control of the
+  address but moves no funds. Once linked, payouts route to the external address.
+- **Earnings (WK-12) + Payments (CL-08)** now show the **live on-chain balance** and transaction
+  history with block-explorer links.
+- **Verified:** the ownership signature is accepted for the real signer and rejected for an
+  impostor; Add Funds took a wallet ₹0 → ₹10,000 live in the UI; the off-ramp moves funds out.
+- **⚠ Honestly flagged:** custodial keys use a dev keystore — before mainnet this must move to an
+  HSM / managed custody + a gasless relayer, and the on/off-ramp mocks need a real payment
+  processor (tracked for Phase 13's pre-mainnet checklist).

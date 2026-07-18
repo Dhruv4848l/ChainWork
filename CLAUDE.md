@@ -101,7 +101,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 6** — Escrow smart contracts (Solidity/Hardhat, testnet) — *done (local tests; Amoy deploy pending user)*
 - [x] **Phase 7** — Wire escrow into the app (live on local chain; Amoy = swap env) — *done*
 - [x] **Phase 8** — Auto-release timer + reminder-cap worker — *done*
-- [ ] Phase 9 — Wallet layer (custodial + external)
+- [x] **Phase 9** — Wallet layer (custodial + external) — *done*
 - [ ] Phase 10 — Admin/Jury console (separate app + DB + bridge service)
 - [ ] Phase 11 — Complaint → triage → commit-reveal jury → verdict
 - [ ] Phase 12 — Notifications, messaging, reviews
@@ -291,6 +291,28 @@ vars at Amoy + a real relayer key.
   admin console reads via the bridge — phases mid-window, reminders sent, auto-release countdown).
 - **Verified:** calendar math (6 tests); a phase auto-released on-chain after exactly 2 reminders,
   paying the worker (0 → ₹3,000), with the repeat tick a no-op (idempotent).
+
+## Wallet layer (Phase 9)
+
+- **`src/lib/chain/wallet.ts`** — custodial + external wallets. `payoutAddressFor(userId)`
+  (external if linked, else custodial), `getWalletSummary` (provisions custodial + reads the LIVE
+  on-chain balance in ₹), `topUpCustodial` (mock fiat ON-ramp = relayer mints), `withdrawCustodial`
+  (mock OFF-ramp = real on-chain transfer custodial→relayer sink), `linkExternalAddress` /
+  `unlinkExternalAddress`. `fundPhase` now pays the worker's payout address.
+- **Actions** `src/features/wallet/actions.ts`: `withdrawAction`, `addFundsAction`,
+  `verifyAndLinkWalletAction` (viem `verifyMessage` on the signed ownership proof → link),
+  `unlinkWalletAction`. External connect UI `ExternalWalletConnect.tsx` (injected wallet via
+  `window.ethereum` + `personal_sign`; MetaMask/Coinbase wired, WalletConnect flagged as needing a
+  projectId + wagmi). WK-12 Earnings + CL-08 Payments show the live balance, the wallet address,
+  the connect UI, and explorer links (`explorerTxBase()` — Amoy link on testnet, none locally).
+- **KEY MANAGEMENT (⚠ pre-mainnet):** custodial keys are HD accounts from a DEV mnemonic
+  (`src/lib/chain/keystore.ts`), gas pre-funded on the local chain. This is a LOCAL-DEV stand-in
+  ONLY. Before mainnet, custody MUST move to an HSM or a managed custody provider, with a gasless
+  meta-tx relayer sponsoring gas, and the on/off-ramp `TODO`s replaced by a real payment processor.
+  (Tracked in the Phase 13 pre-mainnet checklist.)
+- **Verified:** signature ownership proof (accepts real signer, rejects impostor); on-ramp
+  ₹0→₹10,000 through the UI; off-ramp moves funds out to ₹0; wallet UI renders the real address +
+  connect options.
 
 ## Reference files (not in this repo — on the developer's machine)
 

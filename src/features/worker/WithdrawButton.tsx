@@ -1,9 +1,9 @@
 "use client";
 
-import { StubButton } from "./StubButton";
-import { withdrawAction } from "./actions";
+import { StubButton } from "@/features/shared/StubButton";
+import { withdrawAction } from "@/features/wallet/actions";
 
-/* WK-12 withdraw — off-ramp wired in Phase 9 (stub for now). */
+/* WK-12 withdraw — the mocked fiat off-ramp (real on-chain move out of custody). */
 export function WithdrawButton() {
   return <StubButton label="Withdraw to Bank / UPI" size="sm" run={withdrawAction} />;
 }

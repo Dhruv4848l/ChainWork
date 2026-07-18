@@ -1,0 +1,106 @@
+import "server-only";
+import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, isAddress } from "viem";
+import { RPC_URL, TOKEN_ADDRESS, TOKEN_DECIMALS, erc20Abi, activeChain } from "./config";
+import { relayerAccount, accountForUser, provisionWallet } from "./keystore";
+import { platformDb } from "@/lib/platformDb";
+
+/*
+  Wallet layer (Phase 9). Custodial wallets are the default: the platform holds the
+  key (dev keystore) and the user only ever sees a rupee balance — no keys, no gas.
+  Advanced users can link an external self-custody address; once linked, that becomes
+  their payout address.
+
+  KEY MANAGEMENT — read this. In this build custodial keys are HD accounts derived
+  from a dev mnemonic (src/lib/chain/keystore.ts) and gas is pre-funded on the local
+  chain. That is a LOCAL-DEV stand-in only. Before mainnet, custody MUST move to an
+  HSM or a managed custody provider, with a gasless meta-tx relayer sponsoring gas
+  (see the pre-mainnet checklist in Phase 13).
+*/
+
+const chain = activeChain();
+const publicClient = createPublicClient({ chain, transport: http(RPC_URL) });
+
+async function balanceWei(address: `0x${string}`): Promise<bigint> {
+  return publicClient.readContract({ address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [address] });
+}
+function toInr(wei: bigint): number {
+  return Number(formatUnits(wei, TOKEN_DECIMALS));
+}
+
+/** The address a user is paid to: their linked external address, else custodial. */
+export async function payoutAddressFor(userId: string): Promise<`0x${string}`> {
+  const wallet = await platformDb.wallet.findUnique({ where: { userId } });
+  if (wallet?.externalAddress && isAddress(wallet.externalAddress)) {
+    return wallet.externalAddress as `0x${string}`;
+  }
+  const { address } = await provisionWallet(userId); // ensures a real custodial address
+  return address;
+}
+
+export interface WalletSummary {
+  custodialAddress: `0x${string}`;
+  externalAddress: string | null;
+  payoutAddress: `0x${string}`;
+  balanceInr: number;
+  currency: string;
+}
+
+/** Full wallet view: addresses + the live on-chain balance of the payout address. */
+export async function getWalletSummary(userId: string): Promise<WalletSummary> {
+  const { address: custodial } = await provisionWallet(userId);
+  const wallet = await platformDb.wallet.findUnique({ where: { userId } });
+  const external = wallet?.externalAddress ?? null;
+  const payout = (external && isAddress(external) ? external : custodial) as `0x${string}`;
+  const balanceInr = toInr(await balanceWei(payout));
+  // keep the cached balance roughly in sync for cheap reads elsewhere
+  await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: balanceInr } });
+  return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, currency: "INR" };
+}
+
+/**
+ * Mocked fiat OFF-RAMP: converts the custodial balance to fiat and pays it to the
+ * user's bank/UPI. On testnet there's no real bank, so we move the tokens out of the
+ * custodial wallet to the platform relayer (the "off-ramp sink") on-chain and record
+ * it — the balance really drops. TODO(production): call a real off-ramp provider here.
+ */
+export async function withdrawCustodial(userId: string): Promise<{ txHash: `0x${string}`; amountInr: number } | null> {
+  const account = await accountForUser(userId);
+  const bal = await balanceWei(account.address);
+  if (bal === BigInt(0)) return null;
+  const wc = createWalletClient({ account, chain, transport: http(RPC_URL) });
+  const txHash = await wc.writeContract({
+    address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer",
+    args: [relayerAccount().address, bal], chain, account,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  const amountInr = toInr(bal);
+  await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: 0 } });
+  return { txHash, amountInr };
+}
+
+/**
+ * Mocked fiat ON-RAMP: the client pays via UPI/card, the processor converts to
+ * stablecoin and credits their custodial wallet. Here the relayer mints test tokens
+ * to the custodial address. TODO(production): integrate a real payment processor.
+ */
+export async function topUpCustodial(userId: string, amountInr: number): Promise<`0x${string}`> {
+  const { address } = await provisionWallet(userId);
+  const relayer = relayerAccount();
+  const wc = createWalletClient({ account: relayer, chain, transport: http(RPC_URL) });
+  const txHash = await wc.writeContract({
+    address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "mint",
+    args: [address, parseUnits(String(amountInr), TOKEN_DECIMALS)], chain, account: relayer,
+  });
+  await publicClient.waitForTransactionReceipt({ hash: txHash });
+  return txHash;
+}
+
+/** Link a verified external (self-custody) address as the payout target. */
+export async function linkExternalAddress(userId: string, address: string): Promise<void> {
+  if (!isAddress(address)) throw new Error("Invalid address");
+  await platformDb.wallet.updateMany({ where: { userId }, data: { externalAddress: address } });
+}
+
+export async function unlinkExternalAddress(userId: string): Promise<void> {
+  await platformDb.wallet.updateMany({ where: { userId }, data: { externalAddress: null } });
+}

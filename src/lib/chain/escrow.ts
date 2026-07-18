@@ -20,6 +20,7 @@ import {
   activeChain,
 } from "./config";
 import { relayerAccount, accountForUser } from "./keystore";
+import { payoutAddressFor } from "./wallet";
 
 /*
   High-level escrow operations against the PhaseEscrow contract. Each write waits
@@ -90,13 +91,15 @@ async function ensureApproval(account: Account, needed: bigint) {
 /** Client funds a phase: mint (mock on-ramp) + approve + fundPhase, signed by the client. */
 export async function fundPhase(phaseId: string, clientUserId: string, workerUserId: string, amountInr: number) {
   const client = await accountForUser(clientUserId);
-  const worker = await accountForUser(workerUserId);
+  // Pay the worker's payout address — their linked external wallet if they have one,
+  // otherwise their custodial wallet (Phase 9).
+  const workerAddr = await payoutAddressFor(workerUserId);
   const amount = toTokenUnits(amountInr);
   await ensureStablecoin(client.address, amount);
   await ensureApproval(client, amount);
   const wc = walletFor(client);
   const hash = await wc.writeContract({
-    address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhase", args: [keyFor(phaseId), worker.address, amount], chain, account: client,
+    address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhase", args: [keyFor(phaseId), workerAddr, amount], chain, account: client,
   });
   return waitFor(hash);
 }

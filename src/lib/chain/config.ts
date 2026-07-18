@@ -40,6 +40,13 @@ export const phaseEscrowAbi = phaseEscrowAbiJson;
 export const erc20Abi = [
   { type: "function", name: "mint", stateMutability: "nonpayable", inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], outputs: [] },
   { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
+  { type: "function", name: "transfer", stateMutability: "nonpayable", inputs: [{ name: "to", type: "address" }, { name: "amount", type: "uint256" }], outputs: [{ type: "bool" }] },
   { type: "function", name: "allowance", stateMutability: "view", inputs: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "balanceOf", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ type: "uint256" }] },
 ] as const;
+
+/** Block-explorer base URL for tx links (empty on the local chain — no explorer). */
+export function explorerTxBase(): string {
+  if (CHAIN_ID === 80002) return "https://amoy.polygonscan.com/tx/";
+  return ""; // local Hardhat has no explorer
+}

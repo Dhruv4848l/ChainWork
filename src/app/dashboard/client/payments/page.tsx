@@ -3,13 +3,19 @@ import { PageTitle, StatCard } from "@/features/shared/dashboard-ui";
 import { phaseStatusDisplay } from "@/features/shared/status";
 import { requireRole } from "@/lib/auth/guards";
 import { getClientPayments, getClientProfile } from "@/features/client/queries";
+import { getWalletSummary } from "@/lib/chain/wallet";
 import { AddFundsButton } from "@/features/client/AddFundsButton";
 import { FundDueButton } from "@/features/client/FundDueButton";
+import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr } from "@/lib/format";
 
 export default async function ClientPaymentsPage() {
   const user = await requireRole("CLIENT");
-  const [pay, profile] = await Promise.all([getClientPayments(user.id), getClientProfile(user.id)]);
+  const [pay, profile, wallet] = await Promise.all([
+    getClientPayments(user.id),
+    getClientProfile(user.id),
+    getWalletSummary(user.id),
+  ]);
   const reliability = Math.round(profile?.clientProfile?.escrowReliabilityScore ?? 100);
 
   return (
@@ -17,11 +23,17 @@ export default async function ClientPaymentsPage() {
       <PageTitle action={<AddFundsButton />}>Payments &amp; Escrow</PageTitle>
 
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
+        <StatCard label="Wallet balance" value={formatInr(wallet.balanceInr)} accent="bronze" sub="live on-chain, in ₹" />
         <StatCard label="In escrow" value={formatInr(pay.escrowTotal)} accent="info" />
         <StatCard label="Released to workers" value={formatInr(pay.releasedTotal)} accent="emerald" />
-        <StatCard label="Due to fund" value={String(pay.dueToFund.length)} accent="amber" sub="phase(s)" />
         <StatCard label="Escrow reliability" value={`${reliability}%`} accent="emerald" />
       </div>
+
+      <Card className="mb-3.5 p-6">
+        <h3 className="mb-1.5 text-[15px] font-semibold text-ink">Your wallet</h3>
+        <p className="mb-3.5 font-mono text-[11px] text-ink3">{wallet.custodialAddress}</p>
+        <ExternalWalletConnect linkedAddress={wallet.externalAddress} />
+      </Card>
 
       <div className="grid gap-3.5 lg:grid-cols-[1fr_1.6fr]">
         <Card className="p-6">
