@@ -4,15 +4,15 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~14% — Phases 0–1 complete, 2 of 14 phases done.**
+**Overall: ~21% — Phases 0–2 complete, 3 of 14 phases done.**
 
-_Last updated: 2026-07-17 (Phase 1)._
+_Last updated: 2026-07-18 (Phase 2)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
 | 0 | Setup + design system + theming + UI primitives | ✅ Done | 100% |
 | 1 | Two databases + data model + seed data | ✅ Done | 100% |
-| 2 | Consumer auth (Worker/Client toggle, KYC gate) | ⬜ Not started | 0% |
+| 2 | Consumer auth (Worker/Client toggle, KYC gate) | ✅ Done | 100% |
 | 3 | Public marketing site + cinematic 3D hero | ⬜ Not started | 0% |
 | 4 | Worker dashboard (all WK screens, mock money) | ⬜ Not started | 0% |
 | 5 | Client dashboard + Post-a-Job (mock money) ◀ first demoable | ⬜ Not started | 0% |
@@ -67,3 +67,21 @@ _Last updated: 2026-07-17 (Phase 1)._
 
 **Demo logins:** Workers/Clients — password `password123` (`ravi@chainwork.dev` worker,
 `imran@chainwork.dev` client). Admins — password `admin123` (`root@chainwork.local`).
+
+## Phase 2 — what got built (done 2026-07-18)
+
+- **Custom credentials + JWT-cookie auth** (`jose` + `bcrypt`) — chosen over NextAuth for Next 16
+  compatibility; real httpOnly server sessions with role claims. Full detail in `CLAUDE.md`.
+- **Signup/login** with the Find Work | Post a Job toggle (both roles → one User table), phone
+  OTP (mandatory, first — mock code to server console), email verification (optional to proceed,
+  required before posting/applying), password reset flow.
+- **Onboarding wizards** — worker (AUTH-07: headline, location, experience, skills from the
+  taxonomy, languages, availability) and client (AUTH-08).
+- **KYC** (AUTH-09) — upload UI + Unverified→Basic→Verified→Trusted tier bar; mock auto-approve
+  to VERIFIED. **The KYC gate** (`assertKycVerified`) blocks money movement until VERIFIED and
+  soft-blocks with intent preserved — reused by Phases 5/7/9.
+- **Route protection** via `src/proxy.ts` (login required + role scoping); **dev quick-login**
+  panel for instant seeded-user login.
+- **Verified end-to-end in the browser:** signup → OTP → email → onboarding → KYC → dashboard;
+  logged-out protected route redirects to login; KYC gate blocks unverified then passes after
+  verifying; logout + dev-login + role routing all work.

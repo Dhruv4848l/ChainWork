@@ -94,7 +94,7 @@ danger→ember. Keep status colors consistent everywhere.
 
 - [x] **Phase 0** — Setup, design system, theming, UI primitives, this file — *done*
 - [x] **Phase 1** — Two databases (Prisma ×2), full data model, seed data — *done*
-- [ ] Phase 2 — Consumer auth (Worker/Client toggle, sessions, KYC-tier gating)
+- [x] **Phase 2** — Consumer auth (Worker/Client toggle, sessions, KYC-tier gating) — *done*
 - [ ] Phase 3 — Public marketing site (Home hero + all PUB pages)
 - [ ] Phase 4 — Worker dashboard (all WK screens, mock money)
 - [ ] Phase 5 — Client dashboard (all CL screens + Post-a-Job, mock money)
@@ -117,6 +117,33 @@ danger→ember. Keep status colors consistent everywhere.
 - **Scripts**: `db:migrate:platform`, `db:migrate:admin`, `db:generate`, `db:seed`, `db:reset`, `db:studio:platform`, `db:studio:admin`.
 - **Seed** (`prisma/seed.ts`, idempotent): mirrors the design pack — the 3-phase "Shop interior rewiring" hire (Ravi Kumar / Imran K.; Phase 1 RELEASED, Phase 2 "Wiring & panel" ₹8,000 DISPUTED, Phase 3 PENDING_FUNDING), the ADM-12 dispute "Client #4521 vs Worker #1187" (STANDARD/5 jurors) in the admin DB, and all 19 ADM-17 PlatformConfig rows. Demo logins: workers/clients password `password123` (e.g. `ravi@chainwork.dev`, `imran@chainwork.dev`); admins password `admin123` (e.g. `root@chainwork.local`).
 - **PhaseStatus** enum is the escrow spine: PENDING_FUNDING → FUNDED → IN_PROGRESS → DELIVERED → VERIFICATION_WINDOW_OPEN → RELEASED, plus DISPUTED / AUTO_CANCELLED.
+
+## Auth layer (Phase 2)
+
+- **Stack swap (deliberate):** the manual specifies Auth.js/NextAuth, but on Next.js 16
+  (ahead of NextAuth's stable window) we use a **custom credentials + JWT-cookie session**:
+  `jose` (edge-safe) + `bcryptjs`. Same guarantees (real server sessions, role claims, route
+  protection), lower risk. If we ever adopt NextAuth, this is the layer to replace.
+- **Files:** `src/lib/auth/jwt.ts` (edge-safe sign/verify — shared with proxy), `session.ts`
+  (httpOnly cookie `cw_session`, 7-day), `currentUser.ts` (`getCurrentUser`, React-cached),
+  `guards.ts` (`requireUser` / `requireRole` / **`assertKycVerified`** — THE KYC gate),
+  `verification.ts` (OTP / email / reset tokens, mocked sends → server console `[MOCK ...]`),
+  `password.ts`. Server actions in `src/features/auth/actions.ts`. Secret: `AUTH_SECRET` in `.env`.
+- **THE KYC GATE lives in `guards.ts` → `assertKycVerified(user, returnTo)`.** Every money
+  action (Phases 5/7/9) must call it first; it redirects unverified users to
+  `/kyc?reason=money&returnTo=…` (soft-block, preserves intent) and returns them after. Tier
+  order UNVERIFIED<BASIC<VERIFIED<TRUSTED; gate requires ≥ VERIFIED.
+- **Route protection:** `src/proxy.ts` (Next 16 renamed `middleware`→`proxy`). Protects
+  `/dashboard`, `/onboarding`, `/kyc`, `/verify/*`; role-scopes `/dashboard/worker|client`.
+- **Flow:** signup (Worker/Client toggle → one User table) → phone OTP (mandatory, first) →
+  email verify (optional to proceed; required before posting/applying) → onboarding (AUTH-07/08)
+  → KYC (AUTH-09, mock auto-approve to VERIFIED) → dashboard. Mocks logged to server console;
+  TODOs mark where real SMS/email/KYC providers plug in.
+- **Dev quick-login** (`DevLoginPanel`, dev-only via NODE_ENV) logs in as a seeded user instantly.
+- Schema added: `User.dateOfBirth`, `User.onboarded`, `VerificationToken` model,
+  `VerificationPurpose` enum (migration `auth_support`).
+- Placeholder dashboards at `/dashboard/worker|client` (replaced by the real WK/CL dashboards
+  in Phases 4/5).
 
 ## Reference files (not in this repo — on the developer's machine)
 

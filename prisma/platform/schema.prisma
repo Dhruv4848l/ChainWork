@@ -153,6 +153,13 @@ enum NotificationType {
   SYSTEM
 }
 
+/// Purpose of a short-lived verification token (phase 2 auth).
+enum VerificationPurpose {
+  PHONE_OTP
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
 // ---------------------------------------------------------------------------
 // Identity & profiles
 // ---------------------------------------------------------------------------
@@ -165,9 +172,11 @@ model User {
   passwordHash String
   name         String
   avatarUrl    String?
+  dateOfBirth  DateTime?
   kycTier      KycTier  @default(UNVERIFIED)
   emailVerified Boolean @default(false)
   phoneVerified Boolean @default(false)
+  onboarded    Boolean  @default(false)
   strikes      Int      @default(0)
   suspended    Boolean  @default(false)
   createdAt    DateTime @default(now())
@@ -176,6 +185,7 @@ model User {
   workerProfile WorkerProfile?
   clientProfile ClientProfile?
   wallet        Wallet?
+  verificationTokens VerificationToken[]
 
   jobsPosted      Job[]            @relation("ClientJobs")
   applications    JobApplication[] @relation("WorkerApplications")
@@ -500,4 +510,20 @@ model Notification {
   linkUrl   String?
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
+}
+
+/// Short-lived token for phone OTP, email verification, and password reset.
+/// We store only a hash of the code/token, never the plaintext.
+model VerificationToken {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   VerificationPurpose
+  tokenHash String
+  expiresAt DateTime
+  attempts  Int                 @default(0)
+  consumedAt DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([userId, purpose])
 }

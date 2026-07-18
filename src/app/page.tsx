@@ -26,14 +26,20 @@ export default function Home() {
         resolution for daily-wage and gig labor.
       </p>
 
-      <div className="mt-10 flex items-center gap-3">
+      <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+        <Link href="/signup">
+          <Button variant="primary">Get started</Button>
+        </Link>
+        <Link href="/login">
+          <Button variant="secondary">Log in</Button>
+        </Link>
         <Link href="/components-preview">
-          <Button variant="primary">View design system</Button>
+          <Button variant="ghost">Design system</Button>
         </Link>
       </div>
 
       <p className="mt-8 text-xs text-ink3">
-        Phase 0 — foundation. Marketing site arrives in Phase 3.
+        Phase 2 — auth &amp; onboarding live. Marketing site arrives in Phase 3.
       </p>
     </main>
   );
