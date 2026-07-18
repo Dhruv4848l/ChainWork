@@ -97,7 +97,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 2** — Consumer auth (Worker/Client toggle, sessions, KYC-tier gating) — *done*
 - [x] **Phase 3** — Public marketing site (Home hero + all PUB pages) — *done*
 - [x] **Phase 4** — Worker dashboard (all WK screens, mock money) — *done*
-- [ ] Phase 5 — Client dashboard (all CL screens + Post-a-Job, mock money)
+- [x] **Phase 5** — Client dashboard (all CL screens + Post-a-Job, mock money) — *done · first demoable milestone*
 - [ ] Phase 6 — Escrow smart contracts (Solidity/Hardhat, testnet)
 - [ ] Phase 7 — Wire escrow into the app (live testnet)
 - [ ] Phase 8 — Auto-release timer + reminder-cap worker
@@ -186,6 +186,30 @@ danger→ember. Keep status colors consistent everywhere.
   their owning phases (10 / 11).
 - Verified: 17/17 screens render server-side with a worker session; profile edit persists;
   PhaseTracker+Contract show the real 3-phase shop-rewiring hire; withdraw logs its stub.
+
+## Client dashboard (Phase 5)
+
+- **Shell:** `src/app/dashboard/client/layout.tsx` → `ClientChrome` (sidebar + top bar with a
+  "Post a Job" CTA and escrow-total chip, mobile drawer). Enforces CLIENT role.
+- **All 13 CL screens** under `src/app/dashboard/client/`: `/` (CL-01), `/profile`, `/post-job`
+  (the multi-step builder), `/jobs` (My Jobs), `/applicants` + `/jobs/[id]/applicants` (CL-05),
+  `/hires` (+`/[id]` = CL-07 hire management), `/payments`, `/messages`, `/reviews`,
+  `/notifications`, `/settings`, `/complaint`.
+- **Reuses** `PhaseTracker` + `ContractRenderer` (client-side phase controls passed via
+  `actionsByPhase`: Fund / Approve-&-Release / Request Changes). Shared `StubButton` now lives in
+  `src/features/shared/`.
+- **Data:** `src/features/client/queries.ts`. **Actions** (`src/features/client/actions.ts`):
+  REAL — `postJobAction` (creates Job + JobRoleLineItems; a published job appears immediately in
+  the worker's Find Jobs), `acceptApplicantAction` (creates Hire + Contract + Phase, increments
+  hiredCount, notifies the worker; partial hiring supported), `rejectApplicantAction`. STUBS —
+  fund/approve/requestChanges/markNoShow/proposeSettlement/addFunds/message/complaint log a
+  `TODO Phase 7/8/9/11/12` and never fake success.
+- **Post-a-Job builder** (`PostJobBuilder.tsx`): 5 steps (basics → roles → logistics → funding →
+  review), dynamic multi-role line items with auto-summed budget, publish vs save-draft.
+- **Verified end to end (first demoable milestone):** posted a multi-role job → it appeared in the
+  worker's Find Jobs; accepted an applicant → real Hire+Contract+Phase on CL-07 (Phase Tracker +
+  Contract, on-chain escrow "—" since unfunded) and the same hire renders on WK-11; partial-hire
+  slot count decremented; Fund Phase logged its Phase-7 stub. 14/14 CL routes render server-side.
 
 ## Reference files (not in this repo — on the developer's machine)
 

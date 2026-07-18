@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~36% — Phases 0–4 complete, 5 of 14 phases done.**
+**Overall: ~43% — Phases 0–5 complete, 6 of 14 phases done. 🎉 First demoable milestone reached.**
 
-_Last updated: 2026-07-18 (Phase 4)._
+_Last updated: 2026-07-18 (Phase 5)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -15,7 +15,7 @@ _Last updated: 2026-07-18 (Phase 4)._
 | 2 | Consumer auth (Worker/Client toggle, KYC gate) | ✅ Done | 100% |
 | 3 | Public marketing site + cinematic 3D hero | ✅ Done | 100% |
 | 4 | Worker dashboard (all WK screens, mock money) | ✅ Done | 100% |
-| 5 | Client dashboard + Post-a-Job (mock money) ◀ first demoable | ⬜ Not started | 0% |
+| 5 | Client dashboard + Post-a-Job (mock money) ◀ **first demoable** | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
 | 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
@@ -115,3 +115,20 @@ _Last updated: 2026-07-18 (Phase 4)._
   `TODO Phase 7/8/9` and never fake success.
 - Verified: 17/17 screens render with a worker session, profile edit persists, withdraw logs its
   stub. (Screenshots were flaky in the tooling; verified via server-side fetches + DOM reads.)
+
+## Phase 5 — what got built (done 2026-07-18) · 🎉 first demoable milestone
+
+- **All 13 Client screens** (CL-01…13) on a client shell (sidebar + top bar with Post-a-Job CTA +
+  escrow chip, mobile drawer): dashboard, profile, **Post-a-Job builder** (5-step, multi-role,
+  auto-summed budget), my jobs, applicants (+ per-job review with Fit Score), active hires,
+  **hire management** (client phase controls), payments, messages, reviews, notifications,
+  settings, complaint.
+- **Reuses the Phase Tracker + Contract renderer** with client-side controls (Fund / Approve-&-
+  Release / Request Changes / Mark No-Show / Mutual Settlement).
+- **Real writes:** posting a job (Job + role line items) and accepting an applicant (Hire +
+  Contract + Phase, hired-count increment, worker notification, partial hiring). **Escrow funding
+  and every on-chain action stay honest stubs** (log a `TODO Phase 7/8/9`, never fake success).
+- **Walked the whole loop live:** posted a multi-role job → it appeared in the Worker's Find Jobs;
+  accepted an applicant → a real hire showed the Phase Tracker + Contract on the client's CL-07 and
+  the same hire on the worker's WK-11; a slot count decremented; Fund Phase logged its Phase-7 stub.
+- **This is a real, walkable demo: a working marketplace on mock payments.**
