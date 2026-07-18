@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~29% — Phases 0–3 complete, 4 of 14 phases done.**
+**Overall: ~36% — Phases 0–4 complete, 5 of 14 phases done.**
 
-_Last updated: 2026-07-18 (Phase 3)._
+_Last updated: 2026-07-18 (Phase 4)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -14,7 +14,7 @@ _Last updated: 2026-07-18 (Phase 3)._
 | 1 | Two databases + data model + seed data | ✅ Done | 100% |
 | 2 | Consumer auth (Worker/Client toggle, KYC gate) | ✅ Done | 100% |
 | 3 | Public marketing site + cinematic 3D hero | ✅ Done | 100% |
-| 4 | Worker dashboard (all WK screens, mock money) | ⬜ Not started | 0% |
+| 4 | Worker dashboard (all WK screens, mock money) | ✅ Done | 100% |
 | 5 | Client dashboard + Post-a-Job (mock money) ◀ first demoable | ⬜ Not started | 0% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
@@ -99,3 +99,19 @@ _Last updated: 2026-07-18 (Phase 3)._
 - **Shared chrome:** responsive nav (mobile drawer) + footer with the "Platform admin" link.
 - Verified in browser: 3D hero in both themes, all sections with live data, theme toggle across
   pages, mobile layout. Fast first paint (3D bundle lazy-loaded).
+
+## Phase 4 — what got built (done 2026-07-18)
+
+- **All 17 Worker screens** (WK-01…17) on a responsive sidebar + top-bar shell (mobile drawer):
+  dashboard, profile + edit, find jobs, job detail, applications, rates, my posts + editor,
+  active hires, hire detail, earnings & wallet, messages, reviews, notifications, settings
+  (incl. the Jury Duty opt-in), complaint.
+- **All live reads** scoped to the logged-in worker — real seed data throughout.
+- **Reusable Phase Tracker + Contract renderer** (used again by the Client dashboard in Phase 5),
+  shown against the real 3-phase "Shop interior rewiring" hire (Prep released, Wiring & panel
+  disputed, Finish pending).
+- **Real actions:** profile edit (saves every field incl. skills + proficiency) and job application
+  (powers the post→apply→hire loop). **Money/on-chain actions are honest stubs** — they log a
+  `TODO Phase 7/8/9` and never fake success.
+- Verified: 17/17 screens render with a worker session, profile edit persists, withdraw logs its
+  stub. (Screenshots were flaky in the tooling; verified via server-side fetches + DOM reads.)

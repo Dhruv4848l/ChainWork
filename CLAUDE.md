@@ -96,7 +96,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 1** — Two databases (Prisma ×2), full data model, seed data — *done*
 - [x] **Phase 2** — Consumer auth (Worker/Client toggle, sessions, KYC-tier gating) — *done*
 - [x] **Phase 3** — Public marketing site (Home hero + all PUB pages) — *done*
-- [ ] Phase 4 — Worker dashboard (all WK screens, mock money)
+- [x] **Phase 4** — Worker dashboard (all WK screens, mock money) — *done*
 - [ ] Phase 5 — Client dashboard (all CL screens + Post-a-Job, mock money)
 - [ ] Phase 6 — Escrow smart contracts (Solidity/Hardhat, testnet)
 - [ ] Phase 7 — Wire escrow into the app (live testnet)
@@ -163,6 +163,29 @@ danger→ember. Keep status colors consistent everywhere.
   PUB-05/06 and Phase 10's ADM-15 blog moderation.
 - Verified in browser: 3D hero (dark + light), all sections with real data, theme toggle across
   pages, mobile (hamburger + stacked). Marketing pages prerender at build.
+
+## Worker dashboard (Phase 4)
+
+- **Shell:** `src/app/dashboard/worker/layout.tsx` → `WorkerChrome` (client) — sidebar + top bar
+  (wallet chip w/ token toggle, notifications, theme, logout), responsive with a mobile drawer.
+  Enforces WORKER role.
+- **All 17 WK screens** under `src/app/dashboard/worker/`: `/` (WK-01), `/profile` (+`/edit`),
+  `/find-jobs`, `/jobs/[id]`, `/applications`, `/rates`, `/posts` (+`/new`), `/hires` (+`/[id]`),
+  `/earnings`, `/messages`, `/reviews`, `/notifications`, `/settings`, `/complaint`.
+- **Reusable components** (used again by Client in Phase 5): `src/features/shared/PhaseTracker.tsx`
+  (fund→delivered→released timeline, `actionsByPhase` slot) and `ContractRenderer.tsx`. Status→badge
+  mapping in `src/features/shared/status.ts`; small primitives in `dashboard-ui.tsx`; INR/date
+  helpers in `src/lib/format.ts`.
+- **Data:** `src/features/worker/queries.ts` (all live reads, scoped to the logged-in worker).
+- **Actions** (`src/features/worker/actions.ts`): REAL — `saveWorkerProfileAction` (edits every
+  WK-02 field incl. skills+proficiency), `applyToJobAction` (creates JobApplication, powers the
+  post→apply→hire loop). STUBS — `markPhaseDeliveredAction`/`withdrawAction`/`checkInAction`/
+  `sendMessageAction`/`submitComplaintAction` log a `TODO Phase 7/8/9/11/12` and never fake success
+  (surfaced via `StubButton`).
+- Blog "My Posts" filters BlogPost by `authorName`; post editor + complaint filing are stubbed to
+  their owning phases (10 / 11).
+- Verified: 17/17 screens render server-side with a worker session; profile edit persists;
+  PhaseTracker+Contract show the real 3-phase shop-rewiring hire; withdraw logs its stub.
 
 ## Reference files (not in this repo — on the developer's machine)
 
