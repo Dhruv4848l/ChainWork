@@ -98,7 +98,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 3** — Public marketing site (Home hero + all PUB pages) — *done*
 - [x] **Phase 4** — Worker dashboard (all WK screens, mock money) — *done*
 - [x] **Phase 5** — Client dashboard (all CL screens + Post-a-Job, mock money) — *done · first demoable milestone*
-- [ ] Phase 6 — Escrow smart contracts (Solidity/Hardhat, testnet)
+- [x] **Phase 6** — Escrow smart contracts (Solidity/Hardhat, testnet) — *done (local tests; Amoy deploy pending user)*
 - [ ] Phase 7 — Wire escrow into the app (live testnet)
 - [ ] Phase 8 — Auto-release timer + reminder-cap worker
 - [ ] Phase 9 — Wallet layer (custodial + external)
@@ -210,6 +210,29 @@ danger→ember. Keep status colors consistent everywhere.
   worker's Find Jobs; accepted an applicant → real Hire+Contract+Phase on CL-07 (Phase Tracker +
   Contract, on-chain escrow "—" since unfunded) and the same hire renders on WK-11; partial-hire
   slot count decremented; Fund Phase logged its Phase-7 stub. 14/14 CL routes render server-side.
+
+## Escrow smart contracts (Phase 6)
+
+- **Location:** self-contained Hardhat project in **`/contracts`** (separate from the Next app;
+  its own package.json/node_modules). Solidity 0.8.24, OpenZeppelin 5.
+- **`contracts/contracts/PhaseEscrow.sol`** — the money layer. Per-phase escrow keyed by a
+  `bytes32 phaseId`. Functions: `fundPhase`, `markDelivered`, `approveRelease`, `autoRelease`,
+  `raiseDispute`, `resolveDispute(workerBps)`, `proposeSettlement`/`acceptSettlement`,
+  `refundToClient`, `lockStake`/`refundStake`/`forfeitStake`, `pause`/`unpause`. Uses
+  AccessControl + ReentrancyGuard + Pausable + SafeERC20. `MockStablecoin.sol` = test ERC-20 `cwINR`.
+- **Roles:** `DEFAULT_ADMIN_ROLE` (multisig in prod), **`ATTESTOR_ROLE`** (backend oracle/relayer —
+  markDelivered/autoRelease/refund/approve-relay/stake ops), **`DISPUTE_ROLE`** (raise/resolve —
+  jury verdict executor), `PAUSER_ROLE`.
+- **TRUST BOUNDARY (Phase 7 must respect):** the backend is the attestor. `markDelivered(phaseId,
+  releaseEligibleAfter)` takes the off-chain business-day deadline; `autoRelease` reverts before it
+  (timing enforced on-chain). No function drains escrow — funds only reach the recorded worker/client.
+- **Tests:** `contracts/test/PhaseEscrow.test.js` — **31 passing**, every rule + edge case
+  (double-fund, unfunded release, non-party approve, auto-release before/after, dispute-freeze,
+  verdict split math, settlement, stake forfeit, pause, no-drain, reentrancy via a malicious token).
+- **Addresses for Phase 7:** `scripts/deploy.js` writes `contracts/deployments/<network>.json`
+  (gitignored — regenerated per deploy). ABI at `contracts/artifacts/contracts/PhaseEscrow.sol/PhaseEscrow.json`.
+  Deploy: `npm test` (local), `npm run deploy:amoy` (needs `contracts/.env` — throwaway key + Amoy
+  faucet MATIC; see `contracts/README.md`). **Amoy deploy is a user step (needs a testnet wallet).**
 
 ## Reference files (not in this repo — on the developer's machine)
 

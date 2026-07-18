@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~43% — Phases 0–5 complete, 6 of 14 phases done. 🎉 First demoable milestone reached.**
+**Overall: ~50% — Phases 0–6 complete, 7 of 14 phases done. Halfway. The escrow layer exists.**
 
-_Last updated: 2026-07-18 (Phase 5)._
+_Last updated: 2026-07-18 (Phase 6)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -16,6 +16,7 @@ _Last updated: 2026-07-18 (Phase 5)._
 | 3 | Public marketing site + cinematic 3D hero | ✅ Done | 100% |
 | 4 | Worker dashboard (all WK screens, mock money) | ✅ Done | 100% |
 | 5 | Client dashboard + Post-a-Job (mock money) ◀ **first demoable** | ✅ Done | 100% |
+| 6 | Escrow smart contracts (Solidity, testnet) ◀ **the heart** | ✅ Done | 100% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
 | 7 | Wire escrow into the app (live testnet) | ⬜ Not started | 0% |
 | 8 | Auto-release timer + reminder-cap worker | ⬜ Not started | 0% |
@@ -132,3 +133,22 @@ _Last updated: 2026-07-18 (Phase 5)._
   accepted an applicant → a real hire showed the Phase Tracker + Contract on the client's CL-07 and
   the same hire on the worker's WK-11; a slot count decremented; Fund Phase logged its Phase-7 stub.
 - **This is a real, walkable demo: a working marketplace on mock payments.**
+
+## Phase 6 — what got built (done 2026-07-18) · the heart
+
+- **`PhaseEscrow` smart contract** (Solidity, Hardhat, in a separate `/contracts` project):
+  per-phase escrow that funds → locks → releases only by the rules — client approval, timeout
+  auto-release, jury verdict split, mutual settlement, or ghosting refund — plus the worker's
+  refundable delivery stake and a pause circuit-breaker. Built on OpenZeppelin (AccessControl,
+  ReentrancyGuard, Pausable, SafeERC20).
+- **The auto-release timing is enforced on-chain:** the contract reverts an auto-release before
+  the stored eligibility timestamp, so the backend (which relays off-chain facts) can't pay early.
+  And **no function can drain escrow** — funds only ever reach the recorded worker or client.
+- **31 tests, all passing**, covering every rule + the manual's edge cases: double-funding,
+  releasing an unfunded phase, non-party approve, auto-release before/after timing, dispute-freeze
+  blocking release, verdict split math (0/100/60-40), mutual settlement, stake forfeit, refund,
+  pause, no-drain, and a real reentrancy attack (blocked by the guard).
+- Deploy script writes addresses to `deployments/<network>.json` for Phase 7; testnet deploy
+  instructions in `contracts/README.md`. **Everything runs locally; Amoy deploy is a user step**
+  (needs a throwaway testnet wallet + free faucet MATIC).
+- **Golden rule honored:** testnet only, never mainnet, until a professional audit.
