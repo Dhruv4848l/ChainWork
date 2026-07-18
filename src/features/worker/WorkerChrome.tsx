@@ -111,8 +111,9 @@ export function WorkerChrome({
             ☰
           </button>
           <input
+            aria-label="Search jobs, hires, messages"
             placeholder="Search jobs, hires, messages…"
-            className="hidden max-w-md flex-1 rounded-full border border-line bg-card px-4 py-2.5 text-[13.5px] text-ink placeholder:text-ink3 focus:outline-none sm:block"
+            className="hidden max-w-md flex-1 rounded-full border border-line bg-card px-4 py-2.5 text-[13.5px] text-ink placeholder:text-ink3 focus:border-bronze focus:outline-none sm:block"
           />
           <div className="ml-auto flex items-center gap-3">
             <button

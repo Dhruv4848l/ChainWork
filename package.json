@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:contracts": "npm --prefix contracts test",
     "db:generate": "prisma generate --schema prisma/platform/schema.prisma && prisma generate --schema prisma/admin/schema.prisma",
     "db:migrate:platform": "prisma migrate dev --schema prisma/platform/schema.prisma",
     "db:migrate:admin": "prisma migrate dev --schema prisma/admin/schema.prisma",

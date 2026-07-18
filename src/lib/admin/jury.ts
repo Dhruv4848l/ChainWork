@@ -1,9 +1,12 @@
 import "server-only";
-import { keccak256, toHex } from "viem";
 import { adminDb } from "@/lib/adminDb";
 import { getPlatformSettings } from "@/lib/config/platformConfig";
 import * as chain from "@/lib/chain/escrow";
 import type { VerdictChoice } from "@/generated/admin";
+import { voteCommitHash, median, tallyChoice, hasQuorum } from "./voting";
+
+// Re-exported so existing importers (`@/lib/admin/jury`) keep working.
+export { voteCommitHash };
 
 /*
   The peer-jury dispute engine (spec Section 12). Escalation freezes a phase's escrow
@@ -11,11 +14,6 @@ import type { VerdictChoice } from "@/generated/admin";
   the tally (median % for split verdicts) becomes the verdict; stakes settle
   (majority refunded + fee, minority slashed) and reputations update.
 */
-
-// ---- commit-reveal hash: keccak256 over a canonical (choice|split|salt) string ----
-export function voteCommitHash(choice: VerdictChoice, splitPct: number, salt: string): string {
-  return keccak256(toHex(`${choice}|${splitPct}|${salt}`));
-}
 
 /** A stable, non-identifying 4-digit label from a platform user id. */
 function anonLabel(prefix: string, userId: string): string {
@@ -127,25 +125,16 @@ export async function revealVote(
 // ---------------------------------------------------------------------------
 // Tally + finalize (median for split) + juror stake settlement
 // ---------------------------------------------------------------------------
-function median(nums: number[]): number {
-  if (nums.length === 0) return 50;
-  const s = [...nums].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2);
-}
-
 export async function tallyAndFinalize(caseId: string): Promise<{ ok: boolean; error?: string; verdict?: VerdictChoice; splitPct?: number }> {
   const dispute = await adminDb.disputeCase.findUnique({ where: { id: caseId }, include: { votes: true } });
   if (!dispute) return { ok: false, error: "Case not found." };
   const revealed = dispute.votes.filter((v) => v.revealedChoice != null);
   // Quorum: a strict majority of the panel must have revealed.
-  if (revealed.length * 2 <= dispute.panelSize) {
+  if (!hasQuorum(revealed.length, dispute.panelSize)) {
     return { ok: false, error: "Quorum not reached — need more revealed votes." };
   }
 
-  const counts: Record<string, number> = { RELEASE_WORKER: 0, REFUND_CLIENT: 0, SPLIT: 0 };
-  for (const v of revealed) counts[v.revealedChoice as string]++;
-  const verdict = (Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]) as VerdictChoice;
+  const verdict = tallyChoice(revealed.map((v) => v.revealedChoice as VerdictChoice));
   // Tied split proposals resolve to the MEDIAN proposed %, not the mean.
   const splitPct = verdict === "SPLIT"
     ? median(revealed.filter((v) => v.revealedChoice === "SPLIT").map((v) => v.revealedSplitPct ?? 50))

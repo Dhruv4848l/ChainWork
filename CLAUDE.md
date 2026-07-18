@@ -105,7 +105,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 10** — Admin/Jury console (separate app + DB + bridge service) — *done*
 - [x] **Phase 11** — Complaint → triage → commit-reveal jury → verdict — *done*
 - [x] **Phase 12** — Notifications, messaging, reviews — *done*
-- [ ] Phase 13 — Hardening (edge cases, tests, security, mobile/a11y, pre-mainnet checklist)
+- [x] **Phase 13** — Hardening (edge cases, tests, security, mobile/a11y, pre-mainnet checklist) — *done · feature-complete on testnet*
 
 ## Data layer (Phase 1)
 
@@ -417,6 +417,27 @@ vars at Amoy + a real relayer key.
   4 unread → Mark-all-read cleared it. Scripted (temp `api/verify12`, since deleted, snapshotting +
   restoring the worker profile & notifications): completion → COMPLETED + jobs+1 + idempotent; review
   recomputed aggregate to 5★; duplicate + incomplete-hire reviews rejected; REVIEW notification sent.
+
+## Hardening (Phase 13) — feature-complete on testnet
+
+- **Docs in `docs/`:** [EDGE_CASES.md](docs/EDGE_CASES.md) (Section-19 registry → how each is handled),
+  [SECURITY.md](docs/SECURITY.md) (findings + fixes), [PRE_MAINNET_CHECKLIST.md](docs/PRE_MAINNET_CHECKLIST.md)
+  (blockers before real money — audit first; **testnet only until done**).
+- **Tests — `npm test`** (`node --import tsx --test "src/**/*.test.ts"`, 18 pass) **+ `npm run test:contracts`**
+  (31 pass). Suites: `src/lib/admin/voting.test.ts` (commit-reveal integrity + median + tally + quorum),
+  `src/lib/admin/boundary.test.ts` (**two-DB boundary as a test** — scans admin trees, fails if any file
+  but `bridge.ts` imports platformDb), `src/lib/calendar/businessDays.test.ts`, `src/lib/rateLimit.test.ts`.
+  Pure jury logic was extracted from `jury.ts` into **`src/lib/admin/voting.ts`** (no server-only) so it's
+  unit-testable; `jury.ts` re-exports `voteCommitHash` for existing importers.
+- **Security fix — login brute-force.** `src/lib/rateLimit.ts` = in-memory sliding-window limiter;
+  applied to `loginAction` and `adminLoginAction` (5 tries / 15 min per identifier, `rateLimitReset` on
+  success). In-memory = single-instance only; a shared store (Redis) is a pre-mainnet item. Other auth
+  surfaces already had controls (OTP throttle/attempt cap, generic no-enumeration errors, 2FA).
+- **Chain resilience (also committed just before Phase 13):** `getWalletSummary` degrades to the cached
+  balance + `live:false` when the RPC is down (earnings/payments show "cached · chain offline") instead of
+  500-ing. Money movements still require the chain and fail loudly.
+- **a11y:** search inputs got `aria-label` + focus rings; icon buttons already labeled, `lang` set, no
+  unlabeled imgs. Mobile verified at 375px (sidebar → drawer).
 
 ## Reference files (not in this repo — on the developer's machine)
 

@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { createSession, destroySession } from "@/lib/auth/session";
 import { getCurrentUser } from "@/lib/auth/currentUser";
 import { assertKycVerified } from "@/lib/auth/guards";
+import { rateLimit, rateLimitReset } from "@/lib/rateLimit";
 import {
   sendPhoneOtp,
   verifyPhoneOtp,
@@ -121,12 +122,19 @@ export async function loginAction(
     ? identifier.toLowerCase()
     : identifier.replace(/[\s-]/g, "");
 
+  // Brute-force guard: cap failed attempts per identifier (reset on success below).
+  const rlKey = `login:${normalized}`;
+  const rl = rateLimit(rlKey, 5, 15 * 60 * 1000); // 5 tries / 15 min
+  if (!rl.allowed)
+    return { error: `Too many attempts. Try again in ${Math.ceil(rl.retryAfterMs / 60000)} min.` };
+
   const user = await platformDb.user.findFirst({
     where: { OR: [{ email: normalized }, { phone: normalized }] },
   });
   // Same generic message whether the user exists or not (no account enumeration).
   if (!user || !(await verifyPassword(password, user.passwordHash)))
     return { error: "Incorrect phone/email or password." };
+  rateLimitReset(rlKey); // a correct password clears the counter
   if (user.suspended)
     return { error: "This account is suspended. Contact support." };
 

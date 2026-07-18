@@ -8,6 +8,7 @@ import { createAdminSession, destroyAdminSession } from "@/lib/admin/session";
 import { verifyTotp, totpSecretFor, currentTotp } from "@/lib/admin/totp";
 import { requireAdmin, requireAdminAccess } from "@/lib/admin/guards";
 import { writeAudit } from "@/lib/admin/audit";
+import { rateLimit, rateLimitReset } from "@/lib/rateLimit";
 import * as bridge from "@/lib/admin/bridge";
 import * as chain from "@/lib/chain/escrow";
 import * as jury from "@/lib/admin/jury";
@@ -33,6 +34,11 @@ export async function adminLoginAction(_prev: AdminActionState, formData: FormDa
   const code = str(formData, "code");
   if (!email || !password) return { error: "Enter your work email and password." };
 
+  // Brute-force guard on the privileged surface — stricter than consumer login.
+  const rlKey = `admin-login:${email}`;
+  const rl = rateLimit(rlKey, 5, 15 * 60 * 1000);
+  if (!rl.allowed) return { error: `Too many attempts. Try again in ${Math.ceil(rl.retryAfterMs / 60000)} min.` };
+
   const admin = await adminDb.adminUser.findUnique({ where: { email } });
   // Generic message — never reveal which factor failed.
   if (!admin || !admin.active || !(await verifyPassword(password, admin.passwordHash))) {
@@ -48,6 +54,7 @@ export async function adminLoginAction(_prev: AdminActionState, formData: FormDa
     return { error: "Invalid credentials or 2FA code." };
   }
 
+  rateLimitReset(rlKey); // full success clears the counter
   await createAdminSession({ sub: admin.id, role: admin.role });
   await writeAudit({ actorAdminId: admin.id, action: "ADMIN_LOGIN", targetType: "AdminUser", targetId: admin.id });
   redirect("/admin/dashboard");

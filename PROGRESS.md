@@ -4,9 +4,12 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~93% — Phases 0–12 complete, 13 of 14 phases done. Notifications, messaging & reviews are live.**
+**Overall: 100% — all 14 phases (0–13) complete. ChainWork is feature-complete on testnet.** 🎉
 
-_Last updated: 2026-07-19 (Phase 12)._
+> Next step is NOT more features — it's the [pre-mainnet checklist](docs/PRE_MAINNET_CHECKLIST.md),
+> topped by a professional smart-contract audit. The platform stays on testnet until that's done.
+
+_Last updated: 2026-07-19 (Phase 13)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -23,7 +26,7 @@ _Last updated: 2026-07-19 (Phase 12)._
 | 10 | Admin/Jury console (separate app + DB + bridge) | ✅ Done | 100% |
 | 11 | Complaint → commit-reveal jury → verdict | ✅ Done | 100% |
 | 12 | Notifications, messaging, reviews | ✅ Done | 100% |
-| 13 | Hardening (edge cases, tests, security, a11y) | ⬜ Not started | 0% |
+| 13 | Hardening (edge cases, tests, security, a11y) | ✅ Done | 100% |
 
 **Legend:** ✅ done · 🟡 in progress · ⬜ not started
 
@@ -31,8 +34,8 @@ _Last updated: 2026-07-19 (Phase 12)._
 
 - **After Phase 5** — a working marketplace on mock payments: a real, walkable demo.
 - **After Phase 9** — payments are real (testnet only).
-- **After Phase 13** — feature-complete on testnet. Then: professional smart-contract audit
-  before anything touches real money.
+- **After Phase 13** ✅ — feature-complete on testnet. Then: professional smart-contract audit
+  before anything touches real money (see [pre-mainnet checklist](docs/PRE_MAINNET_CHECKLIST.md)).
 
 ## Phase 0 — what got built (done 2026-07-17)
 
@@ -271,3 +274,28 @@ _Last updated: 2026-07-19 (Phase 12)._
   confirmed hire completion (→ COMPLETED, completed-jobs +1, idempotent), a review recomputing the
   worker's aggregate to **5★**, duplicate-review and incomplete-hire both rejected, and the reviewee
   getting a REVIEW notification.
+
+## Phase 13 — what got built (done 2026-07-19) · hardening → feature-complete
+
+- **Edge-case registry, worked through row by row** → [docs/EDGE_CASES.md](docs/EDGE_CASES.md): every
+  Section-19 failure mode mapped to how it's handled (or honestly marked mocked/ops), with file
+  references. The phase-escrow rows (auto-release, reminder cap, revision cap, ghosting + stake
+  forfeit, dispute freeze) and the platform rows (RPC outage → cached-balance degradation) are all
+  genuinely handled.
+- **Critical-path tests, runnable with `npm test`** (18 pass) **+ `npm run test:contracts`** (31 pass):
+  commit-reveal integrity + median + quorum (`voting.test.ts` — the pure jury logic was extracted to
+  `src/lib/admin/voting.ts` to be testable), the **two-DB boundary as a test** (`boundary.test.ts`
+  fails if any admin file imports the Platform DB directly), the business-day calendar, and the new
+  auth rate-limiter. The 31 escrow-contract tests were re-run green.
+- **Security pass** → [docs/SECURITY.md](docs/SECURITY.md): audited access control (worker/client
+  ownership scoping, Analyst read-only, juror-only case access, the bridge boundary), sessions,
+  injection, and secrets (none in the repo). **One real finding fixed:** login had no brute-force
+  protection — added an in-memory rate limiter (5 tries / 15 min, reset on success) on both consumer
+  and admin login.
+- **Responsive + a11y:** verified the dashboards on a 375px mobile viewport (sidebar → hamburger
+  drawer, cards stack); confirmed labeled icon buttons, `lang` set, no unlabeled images; added
+  `aria-label`s + visible focus rings to the top-bar search inputs.
+- **The pre-mainnet checklist** → [docs/PRE_MAINNET_CHECKLIST.md](docs/PRE_MAINNET_CHECKLIST.md): the
+  blockers before real money — **professional contract audit first**, then HSM custody + gasless
+  relayer, real KYC/SMS/email/on-off-ramp providers, and per-jurisdiction legal/AML review. **The
+  golden rule holds: testnet only until these are done.**
