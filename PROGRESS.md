@@ -4,9 +4,9 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~86% — Phases 0–11 complete, 12 of 14 phases done. The peer-jury dispute engine is live.**
+**Overall: ~93% — Phases 0–12 complete, 13 of 14 phases done. Notifications, messaging & reviews are live.**
 
-_Last updated: 2026-07-19 (Phase 11)._
+_Last updated: 2026-07-19 (Phase 12)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -22,7 +22,7 @@ _Last updated: 2026-07-19 (Phase 11)._
 | 9 | Wallet layer (custodial + external) | ✅ Done | 100% |
 | 10 | Admin/Jury console (separate app + DB + bridge) | ✅ Done | 100% |
 | 11 | Complaint → commit-reveal jury → verdict | ✅ Done | 100% |
-| 12 | Notifications, messaging, reviews | ⬜ Not started | 0% |
+| 12 | Notifications, messaging, reviews | ✅ Done | 100% |
 | 13 | Hardening (edge cases, tests, security, a11y) | ⬜ Not started | 0% |
 
 **Legend:** ✅ done · 🟡 in progress · ⬜ not started
@@ -243,3 +243,31 @@ _Last updated: 2026-07-19 (Phase 11)._
   verdict **SPLIT @ median 50%**; majority stakes **1000 → 1100 (+fee, rep 84%)**, minority
   **1000 → 800 (slashed, rep 64%)**; first appeal opened, second **rejected**. Every privileged
   action (escalate, commit, reveal, finalize, appeal) writes to the immutable audit log.
+
+## Phase 12 — what got built (done 2026-07-19) · the communication & reputation layer
+
+- **A real notification layer.** One `notify()` service writes the in-app record (drives the bell
+  badge + notification center) **and** fans out to email/SMS channel adapters — mocked, but shaped
+  so a real provider (Resend/Twilio) drops straight in. High-signal events (money, disputes) also
+  "email"; messages stay in-app. The **notification center** (WK-15/CL-11) now supports click-to-open
+  (marks read + follows the deep link), **Mark all read**, and a live **unread badge** on the bell.
+- **In-app toasts** (4s auto-dismiss) fire on successful actions — a lightweight `ToastProvider`
+  mounted in both dashboard shells, used by the message composer and review form.
+- **Hire-scoped messaging** (WK-13/CL-09): threads exist only within a hire, correctly scoped to the
+  two parties (no open DMs, no cross-hire leakage). Sending persists, notifies the other side, and
+  the thread refreshes; a 5s **poller** brings in the other party's replies (a deliberate v1 — simple
+  and stateless). The "may be used as evidence if disputed" notice sits by the composer, and all
+  messages are retained (they feed Phase 11 dispute evidence).
+- **Reviews** (WK-14/CL-10): a hire now **completes** when its last phase releases (on approval or
+  auto-release), which bumps the worker's completed-jobs count and opens reviews. Post-completion
+  rating with sub-dimensions (punctuality, quality, communication); a review can only be left on a
+  **completed** hire, **once per side**. A client→worker review recomputes the worker's aggregate
+  rating (which feeds juror eligibility + ranking). Each page shows a **nudge queue** of completed
+  hires still awaiting a review.
+- **Shared polish:** shimmer **skeleton loaders** (via `loading.tsx`) while data is in flight — never
+  a spinner — plus consistent empty states across the new screens.
+- **Verified:** sent a real hire-scoped message in the browser (persisted, correct thread); the bell
+  showed **4 unread** and "Mark all read" cleared it; and a scripted end-to-end drive of the real code
+  confirmed hire completion (→ COMPLETED, completed-jobs +1, idempotent), a review recomputing the
+  worker's aggregate to **5★**, duplicate-review and incomplete-hire both rejected, and the reviewee
+  getting a REVIEW notification.

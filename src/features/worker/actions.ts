@@ -7,6 +7,8 @@ import { requireRole } from "@/lib/auth/guards";
 import * as chain from "@/lib/chain/escrow";
 import { getPlatformSettings } from "@/lib/config/platformConfig";
 import { addBusinessDays } from "@/lib/calendar/businessDays";
+import { notify } from "@/lib/notify";
+import { submitReview, type ReviewInput } from "@/lib/reviews";
 
 /** The verification deadline: N working days out, skipping weekends + holidays. */
 async function verificationDeadline(): Promise<Date> {
@@ -166,10 +168,34 @@ export async function checkInAction(hireId: string): Promise<ActionState> {
   return { message: "On-site check-in arrives with the timing engine in Phase 8." };
 }
 
-export async function sendMessageAction(): Promise<ActionState> {
-  await requireRole("WORKER");
-  console.log("TODO Phase 12: persist + deliver hire-scoped message.");
-  return { message: "Messaging is fully wired in Phase 12." };
+/** Send a hire-scoped message (WK-13). Threads only exist within a hire the worker is part of. */
+export async function sendMessageAction(hireId: string, body: string): Promise<ActionState> {
+  const user = await requireRole("WORKER");
+  const text = body.trim();
+  if (!text) return { error: "Write something first." };
+  const hire = await platformDb.hire.findFirst({
+    where: { id: hireId, workerId: user.id },
+    include: { job: true },
+  });
+  if (!hire) return { error: "Conversation not found." };
+
+  await platformDb.message.create({ data: { hireId, senderId: user.id, body: text } });
+  // Notify the other party (in-app; messages stay in-app only — see notify defaults).
+  await notify({
+    userId: hire.clientId,
+    type: "MESSAGE",
+    title: `New message from ${user.name}`,
+    body: text.length > 80 ? text.slice(0, 77) + "…" : text,
+    linkUrl: `/dashboard/client/messages?thread=${hireId}`,
+  });
+  revalidatePath(`/dashboard/worker/messages`);
+  return { ok: true };
+}
+
+/** Leave a review on a completed hire (WK-14). Worker → Client. */
+export async function submitReviewAction(input: Omit<ReviewInput, "direction" | "authorId">): Promise<ActionState> {
+  const user = await requireRole("WORKER");
+  return submitReview({ ...input, direction: "WORKER_TO_CLIENT", authorId: user.id });
 }
 
 const WORKER_CATEGORY: Record<string, "PAYMENT" | "QUALITY" | "CONDUCT" | "DAMAGE" | "OTHER"> = {

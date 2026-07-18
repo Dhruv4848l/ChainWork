@@ -136,15 +136,16 @@ export async function getClientMessageThreads(userId: string) {
     where: { clientId: userId },
     include: { worker: true, job: true, messages: { orderBy: { sentAt: "desc" }, take: 1 } },
   });
+  // Every hire is a possible thread (so a conversation can be started), newest activity first.
   return hires
-    .filter((h) => h.messages.length > 0)
     .map((h) => ({
       hireId: h.id,
       who: h.worker.name,
       hire: h.job.title,
-      last: h.messages[0]?.body ?? "",
+      last: h.messages[0]?.body ?? "No messages yet — say hello.",
       when: h.messages[0]?.sentAt ?? h.createdAt,
-    }));
+    }))
+    .sort((a, b) => b.when.getTime() - a.when.getTime());
 }
 
 export async function getClientThread(hireId: string, userId: string) {
@@ -162,8 +163,24 @@ export async function getClientReviews(userId: string) {
   });
 }
 
+/** Completed hires the client hasn't yet reviewed the worker on (CL-10 nudge queue). */
+export async function getClientReviewableHires(userId: string) {
+  const hires = await platformDb.hire.findMany({
+    where: { clientId: userId, status: "COMPLETED" },
+    include: { worker: true, job: true, reviews: true },
+    orderBy: { updatedAt: "desc" },
+  });
+  return hires
+    .filter((h) => !h.reviews.some((r) => r.direction === "CLIENT_TO_WORKER"))
+    .map((h) => ({ hireId: h.id, who: h.worker.name, job: h.job.title }));
+}
+
 export async function getNotifications(userId: string) {
   return platformDb.notification.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+}
+
+export async function getUnreadNotificationCount(userId: string) {
+  return platformDb.notification.count({ where: { userId, read: false } });
 }
 
 export async function getClientComplaints(userId: string) {

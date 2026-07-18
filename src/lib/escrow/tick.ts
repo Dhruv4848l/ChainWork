@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/platform";
 import { getPlatformSettings } from "@/lib/config/platformConfig";
 import { addBusinessDays } from "@/lib/calendar/businessDays";
 import * as chain from "@/lib/chain/escrow";
+import { maybeCompleteHire } from "@/lib/hires";
 
 /*
   The escrow timing engine (spec 13.2 + 13.4). Runs periodically (a cron route hits
@@ -59,6 +60,7 @@ export async function runEscrowTick(now: Date = new Date()): Promise<TickResult>
           platformDb.notification.create({ data: { userId: p.hire.workerId, type: "PAYMENT", title: "Payment auto-released", body: `The verification window on "${p.name}" lapsed — funds were released to you automatically.` } }),
           platformDb.notification.create({ data: { userId: p.hire.clientId, type: "ESCROW", title: "Phase auto-released", body: `"${p.name}" auto-released to the worker after the verification window closed.` } }),
         ]);
+        await maybeCompleteHire(p.hireId); // last phase? → hire completes, reviews open
         res.autoReleased++;
       } catch (e) {
         res.errors.push(`autoRelease ${p.id}: ${(e as Error).message.slice(0, 120)}`);

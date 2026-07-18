@@ -72,3 +72,26 @@ export function EmptyState({
     </Card>
   );
 }
+
+/* A shimmering placeholder block for data in flight. Compose these into a
+   route's loading.tsx skeleton — never a bare spinner. */
+export function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={`cw-skeleton rounded-lg ${className}`} />;
+}
+
+/** A stack of skeleton rows sized like a typical list/table, for loading.tsx files. */
+export function SkeletonList({ rows = 5 }: { rows?: number }) {
+  return (
+    <Card className="overflow-hidden p-0">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3.5 border-b border-hair px-6 py-4 last:border-b-0">
+          <Skeleton className="h-9 w-9 rounded-full" />
+          <div className="flex-1">
+            <Skeleton className="h-3.5 w-1/3" />
+            <Skeleton className="mt-2 h-3 w-2/3" />
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}

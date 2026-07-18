@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { ThemeToggle } from "@/components/ui";
 import { logoutAction } from "@/features/auth/actions";
 import { formatInr } from "@/lib/format";
+import { ToastProvider } from "@/features/shared/Toast";
 
 /*
   Worker dashboard shell: left sidebar + top bar (wallet chip, notifications,
@@ -31,11 +32,13 @@ export function WorkerChrome({
   name,
   kycTier,
   walletBalance,
+  unreadCount = 0,
   children,
 }: {
   name: string;
   kycTier: string;
   walletBalance: number;
+  unreadCount?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -123,9 +126,14 @@ export function WorkerChrome({
             <Link
               href="/dashboard/worker/notifications"
               className="relative flex h-9 w-9 items-center justify-center rounded-full border border-line bg-card text-ink2"
+              aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
             >
               🔔
-              <span className="absolute right-2 top-1.5 h-1.5 w-1.5 rounded-full bg-ember" />
+              {unreadCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-ember px-1 text-[9px] font-bold text-white">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </Link>
             <ThemeToggle />
             <Link href="/dashboard/worker/profile" className="hidden text-left sm:block">
@@ -137,7 +145,9 @@ export function WorkerChrome({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1180px] flex-1 p-6">{children}</main>
+        <main className="mx-auto w-full max-w-[1180px] flex-1 p-6">
+          <ToastProvider>{children}</ToastProvider>
+        </main>
       </div>
 
       {/* Mobile drawer */}

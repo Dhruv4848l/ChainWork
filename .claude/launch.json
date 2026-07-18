@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "chain",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "contracts", "run", "node"],
+      "port": 8545
+    },
+    {
+      "name": "db-studio-platform",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "db:studio:platform"],
+      "port": 5555
+    },
+    {
+      "name": "db-studio-admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "db:studio:admin", "--", "--port", "5556"],
+      "port": 5556
+    }
+  ]
+}

@@ -4,6 +4,7 @@ import { PageTitle, EmptyState } from "@/features/shared/dashboard-ui";
 import { requireRole } from "@/lib/auth/guards";
 import { getClientMessageThreads, getClientThread } from "@/features/client/queries";
 import { ClientMessageComposer } from "@/features/client/ClientMessageComposer";
+import { ThreadPoller } from "@/features/shared/ThreadPoller";
 
 export default async function ClientMessagesPage({
   searchParams,
@@ -28,6 +29,7 @@ export default async function ClientMessagesPage({
 
   return (
     <div>
+      <ThreadPoller />
       <PageTitle>Messages</PageTitle>
       <Card className="grid min-h-[440px] grid-cols-1 overflow-hidden p-0 md:grid-cols-[300px_1fr]">
         <div className="border-b border-line md:border-b-0 md:border-r">
@@ -54,6 +56,11 @@ export default async function ClientMessagesPage({
                 <StatusBadge tone="warning">Verification window</StatusBadge>
               </div>
               <div className="flex flex-1 flex-col gap-3 p-6">
+                {active.messages.length === 0 && (
+                  <p className="m-auto max-w-xs text-center text-[12.5px] text-ink3">
+                    No messages yet. Say hello — everything here stays scoped to this hire.
+                  </p>
+                )}
                 {active.messages.map((m) => {
                   const mine = m.senderId === user.id;
                   return (
@@ -63,7 +70,7 @@ export default async function ClientMessagesPage({
                   );
                 })}
               </div>
-              <ClientMessageComposer />
+              <ClientMessageComposer hireId={activeId} />
             </>
           )}
         </div>

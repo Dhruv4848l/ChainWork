@@ -6,6 +6,9 @@ import { platformDb } from "@/lib/platformDb";
 import { requireRole, assertKycVerified } from "@/lib/auth/guards";
 import * as chain from "@/lib/chain/escrow";
 import { ESCROW_ADDRESS } from "@/lib/chain/config";
+import { notify } from "@/lib/notify";
+import { submitReview, type ReviewInput } from "@/lib/reviews";
+import { maybeCompleteHire } from "@/lib/hires";
 
 export interface ActionState {
   ok?: boolean;
@@ -236,10 +239,16 @@ export async function approvePhaseAction(phaseId: string): Promise<ActionState> 
         data: { phaseId: phase.id, type: "RELEASE", status: "CONFIRMED", amount: phase.amount, onChainTxHash: txHash },
       }),
       platformDb.wallet.updateMany({ where: { userId: phase.hire.workerId }, data: { balanceCache: bal } }),
-      platformDb.notification.create({
-        data: { userId: phase.hire.workerId, type: "PAYMENT", title: "Payment released", body: `${phase.name} was approved — funds released to your wallet.` },
-      }),
     ]);
+    await notify({
+      userId: phase.hire.workerId,
+      type: "PAYMENT",
+      title: "Payment released",
+      body: `${phase.name} was approved — funds released to your wallet.`,
+      linkUrl: "/dashboard/worker/earnings",
+    });
+    // If that was the last phase, the hire is complete → opens up reviews.
+    await maybeCompleteHire(phase.hireId);
     revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
     return { ok: true, message: "Approved — funds released to the worker.", released: true, txHash };
   } catch (e) {
@@ -305,10 +314,33 @@ export async function addFundsAction(): Promise<ActionState> {
   return { message: "Adding funds is wired to the wallet layer in Phase 9." };
 }
 
-export async function sendMessageAction(): Promise<ActionState> {
-  await requireRole("CLIENT");
-  console.log("TODO Phase 12: persist + deliver hire-scoped message.");
-  return { message: "Messaging is fully wired in Phase 12." };
+/** Send a hire-scoped message (CL-09). Threads only exist within a hire the client owns. */
+export async function sendMessageAction(hireId: string, body: string): Promise<ActionState> {
+  const user = await requireRole("CLIENT");
+  const text = body.trim();
+  if (!text) return { error: "Write something first." };
+  const hire = await platformDb.hire.findFirst({
+    where: { id: hireId, clientId: user.id },
+    include: { job: true },
+  });
+  if (!hire) return { error: "Conversation not found." };
+
+  await platformDb.message.create({ data: { hireId, senderId: user.id, body: text } });
+  await notify({
+    userId: hire.workerId,
+    type: "MESSAGE",
+    title: `New message from ${user.name}`,
+    body: text.length > 80 ? text.slice(0, 77) + "…" : text,
+    linkUrl: `/dashboard/worker/messages?thread=${hireId}`,
+  });
+  revalidatePath(`/dashboard/client/messages`);
+  return { ok: true };
+}
+
+/** Leave a review on a completed hire (CL-10). Client → Worker. */
+export async function submitReviewAction(input: Omit<ReviewInput, "direction" | "authorId">): Promise<ActionState> {
+  const user = await requireRole("CLIENT");
+  return submitReview({ ...input, direction: "CLIENT_TO_WORKER", authorId: user.id });
 }
 
 const CLIENT_CATEGORY: Record<string, "QUALITY" | "NO_SHOW" | "CONDUCT" | "OTHER"> = {

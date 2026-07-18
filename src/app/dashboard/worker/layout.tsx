@@ -1,6 +1,6 @@
 import { requireRole } from "@/lib/auth/guards";
 import { WorkerChrome } from "@/features/worker/WorkerChrome";
-import { getWalletChip } from "@/features/worker/queries";
+import { getWalletChip, getUnreadNotificationCount } from "@/features/worker/queries";
 
 /*
   Shell for every Worker screen (WK-01..17). Enforces the WORKER role, loads the
@@ -8,9 +8,12 @@ import { getWalletChip } from "@/features/worker/queries";
 */
 export default async function WorkerLayout({ children }: { children: React.ReactNode }) {
   const user = await requireRole("WORKER");
-  const balance = await getWalletChip(user.id);
+  const [balance, unreadCount] = await Promise.all([
+    getWalletChip(user.id),
+    getUnreadNotificationCount(user.id),
+  ]);
   return (
-    <WorkerChrome name={user.name} kycTier={user.kycTier} walletBalance={balance}>
+    <WorkerChrome name={user.name} kycTier={user.kycTier} walletBalance={balance} unreadCount={unreadCount}>
       {children}
     </WorkerChrome>
   );

@@ -104,7 +104,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 9** — Wallet layer (custodial + external) — *done*
 - [x] **Phase 10** — Admin/Jury console (separate app + DB + bridge service) — *done*
 - [x] **Phase 11** — Complaint → triage → commit-reveal jury → verdict — *done*
-- [ ] Phase 12 — Notifications, messaging, reviews
+- [x] **Phase 12** — Notifications, messaging, reviews — *done*
 - [ ] Phase 13 — Hardening (edge cases, tests, security, mobile/a11y, pre-mainnet checklist)
 
 ## Data layer (Phase 1)
@@ -378,6 +378,45 @@ vars at Amoy + a real relayer key.
   1000→800 (rep 64%); first appeal opened, second rejected. To re-verify later, recreate that route
   or add a `node:test`. NOTE: the on-chain freeze/settle paths themselves were proven in Phases 7/10;
   the verify route used a synthetic phase id so its `frozen` was false by design.
+
+## Communication & reputation layer (Phase 12)
+
+- **Notifications — `src/lib/notify/`.** `notify({userId,type,title,body?,linkUrl?,channels?})` is the
+  single entry point: it writes the in-app `Notification` row (drives the bell + center) then fans out
+  to the additional channels for that event type (`DEFAULT_CHANNELS` — money/dispute events also email,
+  disputes also SMS, MESSAGE/REVIEW are in-app only). `notifyMany` for panels. Channel adapters live in
+  `channels.ts` — **mocked** (console.log), with the real Resend/Twilio call sketched in a comment;
+  swapping in a provider is a drop-in. `notify()` fan-out is best-effort (`Promise.allSettled`) so a
+  channel failure never breaks the triggering action. Existing inline `notification.create` sites in
+  escrow/jury flows still work; new events (message received, review received, hire completed) use `notify()`.
+- **Notification center** — shared client `src/features/shared/NotificationCenter.tsx` (used by both
+  WK-15/CL-11 pages): click marks-read (`markNotificationReadAction`, user-scoped) + follows `linkUrl`;
+  **Mark all read** (`markAllNotificationsReadAction`). Actions in `src/features/shared/notificationActions.ts`.
+  The bell badge = `getUnreadNotificationCount` passed from each dashboard layout to the chrome.
+- **Toasts** — `src/features/shared/Toast.tsx`: `ToastProvider` + `useToast()`, 4s auto-dismiss, mounted
+  around `{children}` in Worker/Client chrome. Keyframe `cwToastIn` in globals.css.
+- **Messaging (WK-13/CL-09)** — `sendMessageAction(hireId, body)` on both `features/*/actions.ts`:
+  verifies the sender is a party to the hire, creates a `Message`, `notify()`s the other side (in-app),
+  revalidates. Composers are controlled + Enter-to-send + toast on error. Thread queries now surface
+  **every** hire (so a chat can be started), newest-activity first. Near-real-time = `ThreadPoller`
+  (`router.refresh()` every 5s, pauses when tab hidden) — deliberate v1 over websockets.
+- **Reviews (WK-14/CL-10)** — engine `src/lib/reviews.ts` `submitReview()`: a review is allowed only on
+  a **COMPLETED** hire, by the correct party, **once per direction** (`@@unique([hireId,direction])`).
+  A `CLIENT_TO_WORKER` review calls `recomputeWorkerRating()` → updates `WorkerProfile.ratingAvg` +
+  sub-dimensions (feeds juror eligibility min-rating + ranking). Client subjects have no star field
+  (only `escrowReliabilityScore`, which is funding-based) — their worker reviews just display. UI =
+  shared `ReviewForm.tsx` (star pickers; the concrete server action is passed in as a prop, so one
+  component serves both directions). `submitReviewAction` wrappers in each `actions.ts` bind direction+author.
+- **Hire completion — `src/lib/hires.ts` `maybeCompleteHire(hireId)`.** A hire → COMPLETED once **all**
+  phases are RELEASED (idempotent: only acts on ACTIVE→COMPLETED); bumps worker `completedJobsCount`,
+  notifies both parties to review. Called from `approvePhaseAction` (last approval) and the tick.ts
+  auto-release path. **This is what makes reviews reachable** — nothing set COMPLETED before Phase 12.
+- **Polish** — `Skeleton`/`SkeletonList` in `dashboard-ui.tsx` + `cw-skeleton` shimmer in globals.css;
+  `loading.tsx` at `dashboard/worker` and `dashboard/client` roots covers all child routes.
+- **Verified:** browser — sent a real hire-scoped message (persisted, correct thread), bell showed
+  4 unread → Mark-all-read cleared it. Scripted (temp `api/verify12`, since deleted, snapshotting +
+  restoring the worker profile & notifications): completion → COMPLETED + jobs+1 + idempotent; review
+  recomputed aggregate to 5★; duplicate + incomplete-hire reviews rejected; REVIEW notification sent.
 
 ## Reference files (not in this repo — on the developer's machine)
 
