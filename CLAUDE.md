@@ -95,7 +95,7 @@ danger→ember. Keep status colors consistent everywhere.
 - [x] **Phase 0** — Setup, design system, theming, UI primitives, this file — *done*
 - [x] **Phase 1** — Two databases (Prisma ×2), full data model, seed data — *done*
 - [x] **Phase 2** — Consumer auth (Worker/Client toggle, sessions, KYC-tier gating) — *done*
-- [ ] Phase 3 — Public marketing site (Home hero + all PUB pages)
+- [x] **Phase 3** — Public marketing site (Home hero + all PUB pages) — *done*
 - [ ] Phase 4 — Worker dashboard (all WK screens, mock money)
 - [ ] Phase 5 — Client dashboard (all CL screens + Post-a-Job, mock money)
 - [ ] Phase 6 — Escrow smart contracts (Solidity/Hardhat, testnet)
@@ -144,6 +144,25 @@ danger→ember. Keep status colors consistent everywhere.
   `VerificationPurpose` enum (migration `auth_support`).
 - Placeholder dashboards at `/dashboard/worker|client` (replaced by the real WK/CL dashboards
   in Phases 4/5).
+
+## Public marketing site (Phase 3)
+
+- **Home** (`src/app/page.tsx`) — cinematic hero + all sections, server-fetched data.
+- **Inner pages** in the `(marketing)` route group with a shared layout (solid nav + slim
+  footer): `/about`, `/how-it-works`, `/pricing`, `/blog`, `/blog/[slug]`, `/categories`,
+  `/jobs`, `/contact`, `/legal`. 404 at `src/app/not-found.tsx`.
+- **Shared** in `src/features/public/`: `PublicNav` (hero/solid variants + mobile drawer),
+  `PublicFooter` (full/slim + the de-emphasized "Platform admin" → `/admin/login` link),
+  `Logo`, `queries.ts` (featured jobs / verified workers / categories / blog — all from seed).
+- **3D hero:** `HeroScene.tsx` (three + @react-three/fiber, bronze interlocking chain-links +
+  forge sparks, lights only — no external HDR so it works offline/CSP), wrapped by `Hero.tsx`
+  which lazy-loads it (`next/dynamic`, ssr:false) and falls back to a static bronze gradient if
+  WebGL is unavailable or reduced-motion is set. Reveal keyframes (`cw-title-up`, `cw-fade-*`)
+  in globals.css.
+- **BlogPost** model added to the platform schema (migration `blog`) + 4 seeded posts; feeds
+  PUB-05/06 and Phase 10's ADM-15 blog moderation.
+- Verified in browser: 3D hero (dark + light), all sections with real data, theme toggle across
+  pages, mobile (hamburger + stacked). Marketing pages prerender at build.
 
 ## Reference files (not in this repo — on the developer's machine)
 

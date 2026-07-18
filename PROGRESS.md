@@ -4,16 +4,16 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: ~21% — Phases 0–2 complete, 3 of 14 phases done.**
+**Overall: ~29% — Phases 0–3 complete, 4 of 14 phases done.**
 
-_Last updated: 2026-07-18 (Phase 2)._
+_Last updated: 2026-07-18 (Phase 3)._
 
 | # | Phase | Status | % |
 |---|---|---|---|
 | 0 | Setup + design system + theming + UI primitives | ✅ Done | 100% |
 | 1 | Two databases + data model + seed data | ✅ Done | 100% |
 | 2 | Consumer auth (Worker/Client toggle, KYC gate) | ✅ Done | 100% |
-| 3 | Public marketing site + cinematic 3D hero | ⬜ Not started | 0% |
+| 3 | Public marketing site + cinematic 3D hero | ✅ Done | 100% |
 | 4 | Worker dashboard (all WK screens, mock money) | ⬜ Not started | 0% |
 | 5 | Client dashboard + Post-a-Job (mock money) ◀ first demoable | ⬜ Not started | 0% |
 | 6 | Escrow smart contracts (Solidity, testnet) ◀ the heart | ⬜ Not started | 0% |
@@ -85,3 +85,17 @@ _Last updated: 2026-07-18 (Phase 2)._
 - **Verified end-to-end in the browser:** signup → OTP → email → onboarding → KYC → dashboard;
   logged-out protected route redirects to login; KYC gate blocks unverified then passes after
   verifying; logout + dev-login + role routing all work.
+
+## Phase 3 — what got built (done 2026-07-18)
+
+- **Cinematic home** (PUB-01): a lazy-loaded Three.js hero — bronze interlocking chain-links
+  with forge lighting + rising sparks — over all the marketing sections (How It Works,
+  Categories, Verified Workers, Featured Jobs, Testimonials, Blog, Trust band, CTA, Footer).
+  Degrades to a static bronze gradient without WebGL / with reduced motion.
+- **All PUB pages:** About, How It Works (worker/client toggle), Pricing (escrow explainer),
+  Blog index + post, Categories showcase, Jobs teaser, Contact (mock form + FAQs), Legal, 404.
+- **Real data:** featured jobs, verified workers, category counts, and blog posts all pull from
+  the seed DB. Added a `BlogPost` model + 4 seeded posts.
+- **Shared chrome:** responsive nav (mobile drawer) + footer with the "Platform admin" link.
+- Verified in browser: 3D hero in both themes, all sections with live data, theme toggle across
+  pages, mobile layout. Fast first paint (3D bundle lazy-loaded).

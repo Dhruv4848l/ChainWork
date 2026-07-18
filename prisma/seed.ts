@@ -29,6 +29,7 @@ const txHash = (seed: string) =>
   "0x" + Buffer.from(seed).toString("hex").padEnd(64, "0").slice(0, 64);
 
 async function clearPlatform() {
+  await platform.blogPost.deleteMany();
   await platform.notification.deleteMany();
   await platform.message.deleteMany();
   await platform.review.deleteMany();
@@ -377,6 +378,24 @@ async function main() {
       { userId: ravi.id, type: "DISPUTE", title: "Phase under dispute", body: "Phase 2 (Wiring & panel) has been escalated to jury review.", createdAt: daysAgo(1) },
       { userId: imran.id, type: "ESCROW", title: "Escrow funded", body: "₹8,000 locked for Phase 2 (Wiring & panel).", read: true, createdAt: daysAgo(4) },
       { userId: meena.id, type: "APPLICATION", title: "Application under review", body: "R. Events & Decor is reviewing your decorator application.", createdAt: daysAgo(2) },
+    ],
+  });
+
+  // ------------------------------------------------------------------
+  // Blog posts (PUB-05/06) — copy from the design pack
+  // ------------------------------------------------------------------
+  console.log("Seeding blog posts…");
+  const longBody = [
+    "After fourteen years of house calls, these are the things I wish every client asked me before I touched a wire. First: ask to see the load calculation, not just a quote. A number without a breakdown means the breakdown happens later — on your bill.",
+    "Agree the scope in the ChainWork chat, not on a phone call. If anything is disputed later, that chat is the evidence. It protects both sides equally.",
+    "Check the Certified badge — it means an admin has actually reviewed the trade certificate, it isn't self-declared. And fund the escrow before the visit. Every serious tradesperson I know sorts funded jobs to the top.",
+  ].join("\n\n");
+  await platform.blogPost.createMany({
+    data: [
+      { slug: "check-before-hiring-electrician", tag: "Electrical", title: "What to check before hiring an electrician", excerpt: "The four things I wish every client asked me before I touched a wire.", body: longBody, authorName: "Ravi Kumar", readMinutes: 4, publishedAt: daysAgo(6) },
+      { slug: "how-i-price-a-same-day-repair", tag: "Pricing", title: "How I price a same-day repair", excerpt: "Transparent pricing wins repeat clients. Here's my breakdown.", body: "Same-day work carries a premium, and that's fair — but it should be itemised, not hidden. I split every quote into call-out, parts, and labour, and I put it in the chat before I start.\n\nFunded escrow means I don't pad the price to cover the risk of not being paid. That saving goes straight back to the client.", authorName: "Arif Shaikh", readMinutes: 3, publishedAt: daysAgo(12) },
+      { slug: "hiring-a-full-wedding-crew", tag: "Events", title: "Hiring a full wedding crew in one post", excerpt: "One job post can hire a whole crew — each role with its own rate.", body: "A wedding needs helpers, decorators, and electricians all at once. Instead of three separate posts, use role line items: one post, three roles, each with its own headcount and rate.\n\nFund each phase as it comes due, and every worker sees their pay is already locked before they show up.", authorName: "ChainWork Team", readMinutes: 6, publishedAt: daysAgo(20) },
+      { slug: "how-escrow-protects-both-sides", tag: "Trust", title: "How escrow actually protects both sides", excerpt: "A plain-language look at what the smart contract really does.", body: "When a client funds a job, the money moves into a smart contract — a locked vault neither side, nor ChainWork, can open alone. It opens on mutual confirmation, on window expiry, or on a jury verdict.\n\nThe worker knows the money is there. The client knows it won't release until the work is done. Nobody has to trust the other's word.", authorName: "ChainWork Team", readMinutes: 7, publishedAt: daysAgo(28) },
     ],
   });
 

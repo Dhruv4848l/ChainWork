@@ -160,6 +160,12 @@ enum VerificationPurpose {
   PASSWORD_RESET
 }
 
+enum BlogStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
 // ---------------------------------------------------------------------------
 // Identity & profiles
 // ---------------------------------------------------------------------------
@@ -510,6 +516,22 @@ model Notification {
   linkUrl   String?
   read      Boolean          @default(false)
   createdAt DateTime         @default(now())
+}
+
+/// Marketing blog posts (PUB-05/06). Managed by admins (ADM-15) in Phase 10.
+model BlogPost {
+  id           String     @id @default(cuid())
+  slug         String     @unique
+  title        String
+  tag          String
+  excerpt      String
+  body         String
+  coverImage   String?
+  authorName   String
+  readMinutes  Int        @default(4)
+  status       BlogStatus @default(PUBLISHED)
+  publishedAt  DateTime   @default(now())
+  createdAt    DateTime   @default(now())
 }
 
 /// Short-lived token for phone OTP, email verification, and password reset.
