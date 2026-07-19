@@ -15,6 +15,7 @@ export default async function VerifyEmailPage() {
       <EmailVerifyCard
         emailHint={hasRealEmail ? maskEmail(user.email) : ""}
         hasRealEmail={hasRealEmail}
+        emailVerified={user.emailVerified}
       />
     </AuthShell>
   );
