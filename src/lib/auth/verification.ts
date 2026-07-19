@@ -1,16 +1,17 @@
 import "server-only";
 import bcrypt from "bcryptjs";
 import { platformDb } from "@/lib/platformDb";
+import { sendSms } from "@/lib/sms";
 import type { VerificationPurpose } from "@/generated/platform";
 
 /*
   Verification tokens for phone OTP, email verification, and password reset.
-  We store only a HASH of each code/token. "Sending" is mocked by logging to the
-  server console (look for the [MOCK ...] lines when testing).
+  We store only a HASH of each code/token.
 
-  TODO(Phase 2 -> production): replace the console logs with a real SMS provider
-  (e.g. Twilio/MSG91) for OTP and voice fallback, and a real email provider
-  (e.g. Resend/SES) for verification + reset links.
+  DELIVERY: phone OTP goes through the pluggable SMS service (src/lib/sms.ts) —
+  set SMS_PROVIDER=twilio or fast2sms in .env for real texts; unset/mock logs the
+  code to the server console. Email (verification + reset links) is still mocked
+  to the console — TODO(production): wire a real email provider (Resend/SES).
 */
 
 const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -70,7 +71,10 @@ export async function sendPhoneOtp(
   }
   const code = sixDigitCode();
   await replaceToken(userId, "PHONE_OTP", code, OTP_TTL_MS);
-  console.log(`\n[MOCK SMS] OTP for ${phone}: ${code}  (expires in 10 min)\n`);
+  // Delivery goes through the pluggable SMS service (src/lib/sms.ts). With
+  // SMS_PROVIDER unset/mock it logs the code to the console (dev behavior);
+  // with twilio/fast2sms configured it sends a real text.
+  await sendSms(phone, `Your ChainWork verification code is ${code}. It expires in 10 minutes.`, { otpCode: code });
   return { ok: true };
 }
 

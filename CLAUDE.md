@@ -439,6 +439,22 @@ vars at Amoy + a real relayer key.
 - **a11y:** search inputs got `aria-label` + focus rings; icon buttons already labeled, `lang` set, no
   unlabeled imgs. Mobile verified at 375px (sidebar → drawer).
 
+## Real SMS delivery (post-Phase-13 integration)
+
+- **`src/lib/sms.ts`** — pluggable SMS service, selected by `SMS_PROVIDER` in `.env`:
+  `"twilio"` (worldwide; needs `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_FROM`; a trial account
+  only texts console-verified numbers), `"fast2sms"` (India, OTP route only; needs `FAST2SMS_API_KEY`),
+  or `"mock"`/unset (console log — the dev default). Plain REST calls, no SDK dependency.
+  `toE164()` normalizes stored 10-digit numbers using `SMS_DEFAULT_COUNTRY_CODE` (default `+91`).
+- **Fail-safe by design:** missing credentials or a provider error **falls back to the mock console
+  log** (with a `[SMS] … falling back` warning) so signup never blocks on a misconfigured box; the
+  result reports `delivered: false` + the error.
+- **Wired into:** `sendPhoneOtp` (`src/lib/auth/verification.ts`) for signup/login OTP texts, and the
+  notification SMS channel (`src/lib/notify/channels.ts`). Verified E2E in mock mode (signup →
+  `[SMS mock] → …` line → OTP verify). Restart the dev server after changing SMS env vars.
+- Email (verification/reset links + notify email channel) is **still console-mocked** — see the
+  pre-mainnet checklist.
+
 ## Reference files (not in this repo — on the developer's machine)
 
 - Spec v2: `C:\Users\ASUS\Downloads\ChainWork_Complete_Specification_v2.docx` (23 sections;

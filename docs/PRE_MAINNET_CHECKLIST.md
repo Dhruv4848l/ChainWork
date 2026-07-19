@@ -23,9 +23,11 @@ real money.
 4. **Real fiat on/off-ramp.** `topUpCustodial` / `withdrawCustodial` mint/move test tokens. Integrate
    a licensed payment processor for the fiat↔stablecoin conversion, with idempotent retries and a
    held-pending state on partial failure.
-5. **Real SMS + email delivery.** OTP and notifications are console-mocked. Plug providers into the
-   commented adapters (`src/lib/notify/channels.ts`, `src/lib/auth/verification.ts`) — incl. OTP
-   voice fallback.
+5. **Real SMS + email delivery.** ~~SMS~~ **SMS is integrated** — `src/lib/sms.ts` supports Twilio and
+   Fast2SMS (India OTP route), selected by `SMS_PROVIDER` in `.env`, with a safe mock fallback; OTP
+   sending and the notification SMS channel both route through it. Remaining: set real provider
+   credentials in the deployment env, add the OTP **voice fallback**, and integrate a real **email**
+   provider (Resend/SES) — email verification/reset links are still console-mocked.
 6. **Legal + AML review, per jurisdiction.** Money-movement licensing, the enforceability of on-chain
    agreements, data-protection (KYC PII), and an AML/sanctions-screening flow feeding the compliance
    hold queue. This gates *where* you can launch.
@@ -61,6 +63,7 @@ real money.
 | Custody / keys | `src/lib/chain/keystore.ts` | HSM / managed custody + gasless relayer |
 | KYC | `submitKycAction` (auto-approve) | real KYC/liveness vendor |
 | Fiat on/off-ramp | `topUpCustodial` / `withdrawCustodial` | licensed payment processor |
-| Email / SMS | `src/lib/notify/channels.ts`, `verification.ts` | Resend/SES + Twilio/MSG91 |
+| Email | `src/lib/notify/channels.ts`, `verification.ts` | Resend/SES |
+| SMS | ✅ integrated (`src/lib/sms.ts` — Twilio/Fast2SMS via `SMS_PROVIDER`) | set real credentials in the deploy env |
 | Rate limiting | `src/lib/rateLimit.ts` (in-memory) | Redis/Upstash shared store |
 | Chain network | `CHAIN_*` env (local/testnet) | audited mainnet deploy |

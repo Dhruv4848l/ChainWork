@@ -1,5 +1,6 @@
 import "server-only";
 import { platformDb } from "@/lib/platformDb";
+import { sendSms as sendRealSms } from "@/lib/sms";
 
 /*
   Out-of-band notification channels (email + SMS).
@@ -31,12 +32,11 @@ export async function sendEmail(userId: string, subject: string, body: string): 
   void name;
 }
 
-/** SMS adapter — mock. Swap the body for a real provider (Twilio/MSG91). */
+/** SMS adapter — delivers through the pluggable SMS service (src/lib/sms.ts).
+    With SMS_PROVIDER=twilio it sends real texts; mock/fast2sms fall back to a
+    console log for these free-form notification messages. */
 export async function sendSms(userId: string, text: string): Promise<void> {
   const { phone } = await recipientContact(userId);
   if (!phone) return;
-  console.log(`[notify:sms] → ${phone} | ${text}`);
-  // --- Real provider (example) -------------------------------------------------
-  // await twilio.messages.create({ from: TWILIO_FROM, to: phone, body: text });
-  // -----------------------------------------------------------------------------
+  await sendRealSms(phone, text);
 }
