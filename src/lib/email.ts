@@ -36,9 +36,10 @@ export function absoluteUrl(path: string): string {
 }
 
 function mockLog(to: string, subject: string, html: string): EmailResult {
-  // Surface any link prominently so dev flows stay easy to click through.
+  // Surface any link or one-time code prominently so dev flows stay easy to drive.
   const link = html.match(/href="([^"]+)"/)?.[1];
-  console.log(`\n[EMAIL mock] → ${to} | ${subject}${link ? ` | link: ${link}` : ""}\n`);
+  const code = html.match(/>(\d{6})</)?.[1];
+  console.log(`\n[EMAIL mock] → ${to} | ${subject}${link ? ` | link: ${link}` : ""}${code ? ` | code: ${code}` : ""}\n`);
   return { delivered: false, provider: "mock" };
 }
 
@@ -93,22 +94,69 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
   return mockLog(to, subject, html);
 }
 
-/** Minimal branded shell so every mail looks like ChainWork without a template system. */
-export function emailShell(title: string, bodyHtml: string): string {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#0f0d0b;font-family:Arial,Helvetica,sans-serif">
-  <div style="max-width:520px;margin:0 auto;padding:32px 24px">
-    <div style="letter-spacing:.15em;font-size:18px;color:#F5EFE6;padding-bottom:18px">⛓ CHAINWORK</div>
-    <div style="background:#151312;border:1px solid #2a2522;border-radius:14px;padding:28px">
-      <h1 style="margin:0 0 12px;font-size:20px;color:#F5EFE6">${title}</h1>
-      <div style="font-size:14px;line-height:1.6;color:#cfc6b8">${bodyHtml}</div>
-    </div>
-    <p style="font-size:11px;color:#8a8175;padding-top:16px">Sent by ChainWork. If you didn't request this, you can safely ignore it.</p>
-  </div>
-</body></html>`;
+/*
+  Branded template system. Table-based layout + inline styles only, so it renders
+  faithfully in Gmail/Outlook/mobile clients (no external assets, no CSS classes).
+  The dark forge look is deliberate brand — it matches the app.
+*/
+
+/** The outer shell: preheader, wordmark, card, footer. `preheader` is the hidden
+    one-liner inbox preview shown next to the subject. */
+export function emailShell(title: string, bodyHtml: string, preheader = ""): string {
+  return `<!doctype html>
+<html>
+<body style="margin:0;padding:0;background-color:#0f0d0b;">
+  <!-- inbox preview text (hidden in the body) -->
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${preheader}&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#0f0d0b;">
+    <tr><td align="center" style="padding:36px 16px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+
+        <!-- wordmark -->
+        <tr><td align="center" style="padding-bottom:22px;font-family:Georgia,'Times New Roman',serif;">
+          <span style="font-size:15px;color:#D9A066;">&#9903;&#9903;</span>
+          <span style="font-size:19px;letter-spacing:6px;color:#F5EFE6;">&nbsp;CHAINWORK</span>
+        </td></tr>
+
+        <!-- card -->
+        <tr><td style="background-color:#151312;border:1px solid #2a2522;border-radius:16px;padding:34px 32px;font-family:Arial,Helvetica,sans-serif;">
+          <h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;color:#F5EFE6;font-weight:bold;">${title}</h1>
+          <div style="font-size:14px;line-height:1.7;color:#cfc6b8;">${bodyHtml}</div>
+        </td></tr>
+
+        <!-- footer -->
+        <tr><td align="center" style="padding-top:20px;font-family:Arial,Helvetica,sans-serif;">
+          <p style="margin:0 0 6px;font-size:12px;color:#8a8175;font-style:italic;">Work, forged in trust.</p>
+          <p style="margin:0;font-size:11px;line-height:1.6;color:#6f675c;">
+            You're receiving this because of activity on your ChainWork account.<br>
+            If this wasn't you, you can safely ignore this email — nothing changes without the code or link inside.
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
 }
 
-/** A bronze CTA button for links. */
+/** A bronze CTA button for links, with a plain-text fallback link below it. */
 export function emailButton(href: string, label: string): string {
-  return `<p style="margin:20px 0"><a href="${href}" style="background:#D9A066;color:#1a1512;text-decoration:none;font-weight:bold;padding:12px 22px;border-radius:999px;display:inline-block">${label}</a></p>
-  <p style="font-size:12px;color:#8a8175">Or paste this link into your browser:<br><a href="${href}" style="color:#D9A066">${href}</a></p>`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px auto 10px;"><tr>
+    <td style="background-color:#D9A066;border-radius:999px;">
+      <a href="${href}" style="display:inline-block;padding:13px 30px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold;color:#1a1512;text-decoration:none;">${label}</a>
+    </td>
+  </tr></table>
+  <p style="margin:14px 0 0;font-size:12px;line-height:1.6;color:#8a8175;">Button not working? Paste this link into your browser:<br>
+  <a href="${href}" style="color:#D9A066;word-break:break-all;">${href}</a></p>`;
+}
+
+/** A large spaced one-time code block, for OTP-by-email. */
+export function emailCode(code: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:22px 0 10px;"><tr>
+    <td align="center" style="background-color:#0f0d0b;border:1px dashed #3a332e;border-radius:12px;padding:20px;">
+      <span style="font-family:'Courier New',Courier,monospace;font-size:30px;font-weight:bold;letter-spacing:10px;color:#D9A066;">${code}</span>
+    </td>
+  </tr></table>
+  <p style="margin:6px 0 0;font-size:12px;color:#8a8175;text-align:center;">This code expires in 10 minutes. Never share it — ChainWork staff will never ask for it.</p>`;
 }

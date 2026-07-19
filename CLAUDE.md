@@ -463,6 +463,28 @@ vars at Amoy + a real relayer key.
   email channel. Verified in mock mode: forgot-password → absolute link logged → link opens the
   reset form.
 
+## Polished delivery templates + OTP password reset (post-Phase-13)
+
+- **Email templates (`src/lib/email.ts`):** `emailShell(title, body, preheader)` is now a
+  table-based, email-client-safe branded layout (hidden inbox preheader, CHAINWORK wordmark,
+  dark forge card, footer tagline); `emailButton` (bronze CTA + plain-link fallback) and
+  `emailCode` (large spaced one-time-code block for OTP-by-email). Mock logger surfaces both
+  `link:` and `code:` from the HTML.
+- **SMS copy:** codes lead with the brand and include a never-share warning, single-segment
+  length (`ChainWork: your verification code is X. Valid 10 min. Never share…`).
+- **Forgot password = OTP now (AUTH-05/06):** `/forgot-password` is a two-step window —
+  identifier + channel choice (Text me / Email me) → 6-digit code by that channel → code + new
+  password in one submit. Server: `sendPasswordResetOtp` / `verifyPasswordResetOtp`
+  (10-min TTL, 5-attempt cap, resend throttle) + `forgotPasswordAction` (rate-limited 3/15min
+  per identifier) + `resetPasswordWithOtpAction`. Anti-enumeration kept (generic replies; a
+  missing account behaves exactly like a wrong code; the code only goes to a channel the
+  account actually has). The old `/reset-password?uid&token` link page remains for stale links.
+- **Verified live:** email-channel request → real Resend path fired (403 for a non-owner
+  recipient on the no-domain tier → clean mock fallback), code entered + new password →
+  success card → login with the new password works. Ravi's password was reset to its seed
+  value (`password123`) so demo logins are unchanged. NOTE: seed users have `onboarded:false`,
+  so a normal login routes them to onboarding — only the dev quick-login jumps to the dashboard.
+
 ## Reference files (not in this repo — on the developer's machine)
 
 - Spec v2: `C:\Users\ASUS\Downloads\ChainWork_Complete_Specification_v2.docx` (23 sections;

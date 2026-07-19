@@ -2,7 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { platformDb } from "@/lib/platformDb";
 import { sendSms } from "@/lib/sms";
-import { sendEmail, emailShell, emailButton, absoluteUrl } from "@/lib/email";
+import { sendEmail, emailShell, emailButton, emailCode, absoluteUrl } from "@/lib/email";
 import type { VerificationPurpose } from "@/generated/platform";
 
 /*
@@ -75,7 +75,11 @@ export async function sendPhoneOtp(
   // Delivery goes through the pluggable SMS service (src/lib/sms.ts). With
   // SMS_PROVIDER unset/mock it logs the code to the console (dev behavior);
   // with twilio/fast2sms configured it sends a real text.
-  await sendSms(phone, `Your ChainWork verification code is ${code}. It expires in 10 minutes.`, { otpCode: code });
+  await sendSms(
+    phone,
+    `ChainWork: your verification code is ${code}. Valid 10 min. Never share this code — our team will never ask for it.`,
+    { otpCode: code }
+  );
   return { ok: true };
 }
 
@@ -132,7 +136,8 @@ export async function sendEmailVerification(
     "Verify your email — ChainWork",
     emailShell(
       "Verify your email",
-      `<p>Confirm this address to unlock posting and applying on ChainWork. The link is valid for 1 hour.</p>${emailButton(link, "Verify email")}`
+      `<p>One click confirms this address and unlocks posting and applying on ChainWork. The link is valid for 1 hour.</p>${emailButton(link, "Verify my email")}`,
+      "Confirm your address to unlock posting and applying — link valid 1 hour."
     )
   );
   return { ok: true };
@@ -166,29 +171,69 @@ export async function confirmEmailToken(
 
 // ---- Password reset (token issue + consume) ----
 
-export async function sendPasswordReset(
+/**
+ * OTP-based reset (AUTH-05/06): a 6-digit code by the user's CHOSEN channel.
+ * The code is stored hashed with a 10-minute TTL; `verifyPasswordResetOtp`
+ * enforces a 5-attempt cap. Delivery only happens on a channel the account
+ * actually has — a mismatch is silently skipped (anti-enumeration).
+ */
+export async function sendPasswordResetOtp(
   userId: string,
+  channel: "sms" | "email",
   contact: { email?: string | null; phone?: string | null }
-): Promise<void> {
-  const token = randomToken();
-  await replaceToken(userId, "PASSWORD_RESET", token, TOKEN_TTL_MS);
-  const link = absoluteUrl(`/reset-password?uid=${userId}&token=${token}`);
-  // Route by what the ACCOUNT has (not what the user typed into the form):
-  // email when on file, else the link goes out by SMS.
-  if (contact.email) {
+): Promise<{ ok: boolean; throttled?: boolean }> {
+  if (await issuedTooRecently(userId, "PASSWORD_RESET")) {
+    return { ok: false, throttled: true };
+  }
+  const code = sixDigitCode();
+  await replaceToken(userId, "PASSWORD_RESET", code, OTP_TTL_MS);
+
+  if (channel === "sms" && contact.phone) {
+    await sendSms(
+      contact.phone,
+      `ChainWork: your password reset code is ${code}. Valid 10 min. If you didn't request this, ignore this message.`,
+      { otpCode: code }
+    );
+  } else if (channel === "email" && contact.email) {
     await sendEmail(
       contact.email,
-      "Reset your password — ChainWork",
+      "Your password reset code — ChainWork",
       emailShell(
         "Reset your password",
-        `<p>Someone (hopefully you) asked to reset the password for this account. The link is valid for 1 hour.</p>${emailButton(link, "Choose a new password")}`
+        `<p>Use this one-time code to choose a new password. Enter it on the reset screen along with your new password.</p>${emailCode(code)}`,
+        `Your ChainWork reset code is ${code} — valid for 10 minutes.`
       )
     );
-  } else if (contact.phone) {
-    await sendSms(contact.phone, `Reset your ChainWork password (valid 1 hour): ${link}`);
-  } else {
-    console.warn(`[reset] user ${userId} has no email or phone on file — reset link not deliverable.`);
   }
+  return { ok: true };
+}
+
+/** Check a reset code without consuming it is not allowed — this verifies AND
+    consumes in one step (called together with the new password). 5-attempt cap. */
+export async function verifyPasswordResetOtp(
+  userId: string,
+  code: string
+): Promise<{ ok: boolean; error?: string }> {
+  const token = await platformDb.verificationToken.findFirst({
+    where: { userId, purpose: "PASSWORD_RESET", consumedAt: null },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!token) return { ok: false, error: "No active code — request a new one." };
+  if (token.expiresAt < new Date()) return { ok: false, error: "Code expired — request a new one." };
+  if (token.attempts >= 5) return { ok: false, error: "Too many attempts — request a new code." };
+
+  if (!(await bcrypt.compare(code, token.tokenHash))) {
+    await platformDb.verificationToken.update({
+      where: { id: token.id },
+      data: { attempts: { increment: 1 } },
+    });
+    return { ok: false, error: "Incorrect code." };
+  }
+  await platformDb.verificationToken.update({
+    where: { id: token.id },
+    data: { consumedAt: new Date() },
+  });
+  return { ok: true };
 }
 
 export async function consumePasswordReset(

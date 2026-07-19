@@ -12,7 +12,8 @@ import {
   verifyPhoneOtp,
   sendEmailVerification,
   confirmEmailToken,
-  sendPasswordReset,
+  sendPasswordResetOtp,
+  verifyPasswordResetOtp,
   consumePasswordReset,
 } from "@/lib/auth/verification";
 import type { Role } from "@/generated/platform";
@@ -324,24 +325,71 @@ export async function fundEscrowTestAction(
 // ---------------------------------------------------------------------------
 // Password reset (AUTH-05 / AUTH-06)
 // ---------------------------------------------------------------------------
+/** AUTH-05 step 1 — send a 6-digit reset code by the user's chosen channel. */
 export async function forgotPasswordAction(
   _prev: FormState,
   formData: FormData
 ): Promise<FormState> {
   const identifier = str(formData, "identifier");
+  const channel = str(formData, "channel") === "email" ? "email" : "sms";
   if (!identifier) return { error: "Enter your phone or email." };
+  const normalized = identifier.includes("@")
+    ? identifier.toLowerCase()
+    : identifier.replace(/[\s-]/g, "");
+
+  // Abuse guard: 3 code requests / 15 min per identifier.
+  const rl = rateLimit(`pwreset:${normalized}`, 3, 15 * 60 * 1000);
+  if (!rl.allowed)
+    return { error: `Too many reset requests. Try again in ${Math.ceil(rl.retryAfterMs / 60000)} min.` };
+
+  const user = await platformDb.user.findFirst({
+    where: { OR: [{ email: normalized }, { phone: normalized }] },
+  });
+  // Send only if found — but ALWAYS the same generic reply (no account enumeration).
+  if (user) {
+    await sendPasswordResetOtp(user.id, channel as "sms" | "email", {
+      email: user.email,
+      phone: user.phone,
+    });
+  }
+  return {
+    ok: true,
+    message: channel === "email"
+      ? "If that account exists, a 6-digit code was emailed to it."
+      : "If that account exists, a 6-digit code was texted to it.",
+  };
+}
+
+/** AUTH-06 (OTP variant) — verify the code and set the new password in one step. */
+export async function resetPasswordWithOtpAction(
+  _prev: FormState,
+  formData: FormData
+): Promise<FormState> {
+  const identifier = str(formData, "identifier");
+  const code = str(formData, "code");
+  const password = str(formData, "password");
+  const confirm = str(formData, "confirm");
+  if (!/^\d{6}$/.test(code)) return { error: "Enter the 6-digit code." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (password !== confirm) return { error: "Passwords don't match." };
+
   const normalized = identifier.includes("@")
     ? identifier.toLowerCase()
     : identifier.replace(/[\s-]/g, "");
   const user = await platformDb.user.findFirst({
     where: { OR: [{ email: normalized }, { phone: normalized }] },
   });
-  // Send only if found, but always return the same message (no account enumeration).
-  if (user) await sendPasswordReset(user.id, { email: user.email, phone: user.phone });
-  return {
-    ok: true,
-    message: "If that account exists, a reset link is on its way.",
-  };
+  // A missing account and a wrong code look identical from the outside.
+  if (!user) return { error: "Incorrect code." };
+
+  const res = await verifyPasswordResetOtp(user.id, code);
+  if (!res.ok) return { error: res.error };
+
+  await platformDb.user.update({
+    where: { id: user.id },
+    data: { passwordHash: await hashPassword(password) },
+  });
+  return { ok: true, message: "Password updated — you can log in now." };
 }
 
 export async function resetPasswordAction(
