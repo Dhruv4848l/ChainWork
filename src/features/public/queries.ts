@@ -78,9 +78,11 @@ export async function getCategoriesWithCounts() {
 
 /** A per-category showcase of verified workers (PUB-07). */
 export async function getCategoryShowcase() {
-  const categories = await getCategoriesWithCounts();
+  // Every domain is browsable (Fiverr-style) — ones with verified workers first,
+  // new/empty domains still listed so the catalog is visible.
+  const categories = (await getCategoriesWithCounts()).sort((a, b) => b.workerCount - a.workerCount);
   const withWorkers = await Promise.all(
-    categories.slice(0, 4).map(async (c) => {
+    categories.map(async (c) => {
       const workers = await platformDb.user.findMany({
         where: {
           role: "WORKER",
@@ -101,7 +103,7 @@ export async function getCategoryShowcase() {
       };
     })
   );
-  return withWorkers.filter((c) => c.workers.length > 0);
+  return withWorkers;
 }
 
 /** Published blog posts (PUB-05). */

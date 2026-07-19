@@ -75,13 +75,27 @@ async function main() {
   // Taxonomy
   // ------------------------------------------------------------------
   console.log("Seeding categories & skills…");
+  // Domains → roles, Fiverr-style. Mirrored in scripts/update-taxonomy.mjs (the
+  // additive updater for a live DB) — keep the two in sync.
   const catData = [
-    { name: "Electrical", slug: "electrical", icon: "⚡", skills: ["Electrician", "Wiring", "Panel Installation"] },
-    { name: "Cooking", slug: "cooking", icon: "🍳", skills: ["Cook", "Chef", "Catering"] },
+    { name: "Tech & Digital", slug: "tech-digital", icon: "💻", skills: [
+      "Web Design", "Web Development", "Mobile App Development", "UI/UX Design",
+      "Graphic Design", "SEO & Digital Marketing", "IT Support", "Data Entry",
+    ] },
+    { name: "Electrical & Appliances", slug: "electrical", icon: "⚡", skills: [
+      "Electrician", "Wiring", "Panel Installation", "Fan & Cooler Repair",
+      "AC Repair", "Washing Machine Repair", "Refrigerator Repair",
+    ] },
+    { name: "Kitchen & Catering", slug: "cooking", icon: "🍳", skills: [
+      "Chef", "Cook", "Kitchen Helper (Commis)", "Baker", "Catering", "Barista",
+    ] },
+    { name: "Construction & Repair", slug: "construction", icon: "🔨", skills: [
+      "Carpenter", "Plumber", "Mason", "Welder", "Tiling & Flooring",
+    ] },
     { name: "Decoration", slug: "decoration", icon: "🎨", skills: ["Decorator", "Painter", "Event Decor"] },
     { name: "Driving", slug: "driving", icon: "🚗", skills: ["Driver", "Delivery"] },
-    { name: "Cleaning", slug: "cleaning", icon: "🧹", skills: ["Cleaner", "Housekeeping"] },
-    { name: "Hospitality", slug: "hospitality", icon: "🍽️", skills: ["Waiter", "Helper"] },
+    { name: "Cleaning", slug: "cleaning", icon: "🧹", skills: ["Cleaner", "Housekeeping", "Pest Control"] },
+    { name: "Hospitality", slug: "hospitality", icon: "🍽️", skills: ["Waiter", "Helper", "Event Staff"] },
   ];
   const skillByName: Record<string, string> = {};
   for (const c of catData) {

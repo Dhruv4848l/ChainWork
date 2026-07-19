@@ -25,6 +25,16 @@ export default async function CategoriesPage() {
                 {c.workerCount} verified workers
               </span>
             </div>
+            {c.workers.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-line-strong px-6 py-8 text-center">
+                <p className="m-0 text-sm text-ink3">
+                  A new domain — no verified workers yet.{" "}
+                  <Link href="/signup" className="font-semibold text-bronze hover:underline">
+                    Be the first to offer these skills →
+                  </Link>
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
               {c.workers.map((w) => (
                 <div key={w.id} className="flex flex-col gap-2.5 rounded-2xl border border-line bg-card p-5">

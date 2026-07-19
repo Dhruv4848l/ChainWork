@@ -49,25 +49,32 @@ export function WorkerOnboardingForm({ skills }: { skills: Skill[] }) {
         </div>
 
         <div>
-          <p className="mb-2 text-xs font-medium text-ink2">Your skills</p>
-          <div className="flex flex-wrap gap-2">
-            {skills.map((s) => {
-              const on = selected.has(s.id);
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => toggle(s.id)}
-                  className={`rounded-full border px-4 py-2 text-[13px] font-medium transition-colors ${
-                    on
-                      ? "border-bronze bg-bronze/10 text-bronze"
-                      : "border-line-strong text-ink2 hover:border-bronze"
-                  }`}
-                >
-                  {s.name}
-                </button>
-              );
-            })}
+          <p className="mb-2 text-xs font-medium text-ink2">Your skills — pick from any domain</p>
+          <div className="flex max-h-72 flex-col gap-3.5 overflow-y-auto rounded-lg border border-hair bg-bg/50 p-3.5">
+            {[...new Set(skills.map((s) => s.category))].map((cat) => (
+              <div key={cat}>
+                <p className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-ink3">{cat}</p>
+                <div className="flex flex-wrap gap-2">
+                  {skills.filter((s) => s.category === cat).map((s) => {
+                    const on = selected.has(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => toggle(s.id)}
+                        className={`rounded-full border px-3.5 py-1.5 text-[12.5px] font-medium transition-colors ${
+                          on
+                            ? "border-bronze bg-bronze/10 text-bronze"
+                            : "border-line-strong text-ink2 hover:border-bronze"
+                        }`}
+                      >
+                        {s.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
