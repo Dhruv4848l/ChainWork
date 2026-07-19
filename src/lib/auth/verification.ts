@@ -2,6 +2,7 @@ import "server-only";
 import bcrypt from "bcryptjs";
 import { platformDb } from "@/lib/platformDb";
 import { sendSms } from "@/lib/sms";
+import { sendEmail, emailShell, emailButton, absoluteUrl } from "@/lib/email";
 import type { VerificationPurpose } from "@/generated/platform";
 
 /*
@@ -123,8 +124,17 @@ export async function sendEmailVerification(
   }
   const token = randomToken();
   await replaceToken(userId, "EMAIL_VERIFY", token, TOKEN_TTL_MS);
-  const link = `/verify/email/confirm?uid=${userId}&token=${token}`;
-  console.log(`\n[MOCK EMAIL] Verify ${email}: open ${link}\n`);
+  const link = absoluteUrl(`/verify/email/confirm?uid=${userId}&token=${token}`);
+  // Delivery via the pluggable email service (src/lib/email.ts) — real with
+  // EMAIL_PROVIDER=resend/brevo, console-logged in mock mode.
+  await sendEmail(
+    email,
+    "Verify your email — ChainWork",
+    emailShell(
+      "Verify your email",
+      `<p>Confirm this address to unlock posting and applying on ChainWork. The link is valid for 1 hour.</p>${emailButton(link, "Verify email")}`
+    )
+  );
   return { ok: true };
 }
 
@@ -158,12 +168,27 @@ export async function confirmEmailToken(
 
 export async function sendPasswordReset(
   userId: string,
-  destination: string
+  contact: { email?: string | null; phone?: string | null }
 ): Promise<void> {
   const token = randomToken();
   await replaceToken(userId, "PASSWORD_RESET", token, TOKEN_TTL_MS);
-  const link = `/reset-password?uid=${userId}&token=${token}`;
-  console.log(`\n[MOCK] Password reset for ${destination}: open ${link}\n`);
+  const link = absoluteUrl(`/reset-password?uid=${userId}&token=${token}`);
+  // Route by what the ACCOUNT has (not what the user typed into the form):
+  // email when on file, else the link goes out by SMS.
+  if (contact.email) {
+    await sendEmail(
+      contact.email,
+      "Reset your password — ChainWork",
+      emailShell(
+        "Reset your password",
+        `<p>Someone (hopefully you) asked to reset the password for this account. The link is valid for 1 hour.</p>${emailButton(link, "Choose a new password")}`
+      )
+    );
+  } else if (contact.phone) {
+    await sendSms(contact.phone, `Reset your ChainWork password (valid 1 hour): ${link}`);
+  } else {
+    console.warn(`[reset] user ${userId} has no email or phone on file — reset link not deliverable.`);
+  }
 }
 
 export async function consumePasswordReset(

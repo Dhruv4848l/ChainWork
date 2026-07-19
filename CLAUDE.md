@@ -452,8 +452,16 @@ vars at Amoy + a real relayer key.
 - **Wired into:** `sendPhoneOtp` (`src/lib/auth/verification.ts`) for signup/login OTP texts, and the
   notification SMS channel (`src/lib/notify/channels.ts`). Verified E2E in mock mode (signup →
   `[SMS mock] → …` line → OTP verify). Restart the dev server after changing SMS env vars.
-- Email (verification/reset links + notify email channel) is **still console-mocked** — see the
-  pre-mainnet checklist.
+- **Email is real too — `src/lib/email.ts`** (same pattern): `EMAIL_PROVIDER` = `"resend"`
+  (needs `RESEND_API_KEY`; without a verified domain, from `onboarding@resend.dev` TO the Resend
+  account's own email only), `"brevo"` (needs `BREVO_API_KEY`), or `"mock"`/unset. `EMAIL_FROM`
+  sets the sender; `absoluteUrl()` builds emailed links from `APP_BASE_URL` (localhost:3000 dev).
+  `emailShell()`/`emailButton()` give a minimal branded dark template. Same fail-safe fallback to
+  a console log (`[EMAIL mock] … | link: …`). Wired into: `sendEmailVerification` (verify link),
+  `sendPasswordReset` (**routed to the account's email on file, or via SMS if the account has no
+  email** — fixed the old bug of "emailing" whatever identifier the user typed), and the notify
+  email channel. Verified in mock mode: forgot-password → absolute link logged → link opens the
+  reset form.
 
 ## Reference files (not in this repo — on the developer's machine)
 

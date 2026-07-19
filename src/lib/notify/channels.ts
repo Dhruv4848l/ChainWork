@@ -1,6 +1,7 @@
 import "server-only";
 import { platformDb } from "@/lib/platformDb";
 import { sendSms as sendRealSms } from "@/lib/sms";
+import { sendEmail as sendRealEmail, emailShell } from "@/lib/email";
 
 /*
   Out-of-band notification channels (email + SMS).
@@ -16,20 +17,12 @@ async function recipientContact(userId: string): Promise<{ email: string | null;
   return { email: u?.email ?? null, phone: u?.phone ?? null, name: u?.name ?? "there" };
 }
 
-/** Email adapter — mock. Swap the body for a real provider (Resend/SES/Sendgrid). */
+/** Email adapter — delivers through the pluggable email service (src/lib/email.ts).
+    Real with EMAIL_PROVIDER=resend/brevo; mock logs to the console. */
 export async function sendEmail(userId: string, subject: string, body: string): Promise<void> {
   const { email, name } = await recipientContact(userId);
   if (!email) return;
-  console.log(`[notify:email] → ${email} | ${subject} — ${body}`);
-  // --- Real provider (example) -------------------------------------------------
-  // await resend.emails.send({
-  //   from: "ChainWork <noreply@chainwork.app>",
-  //   to: email,
-  //   subject,
-  //   html: renderEmail({ name, subject, body }),
-  // });
-  // -----------------------------------------------------------------------------
-  void name;
+  await sendRealEmail(email, subject, emailShell(subject, `<p>Hi ${name},</p><p>${body}</p>`));
 }
 
 /** SMS adapter — delivers through the pluggable SMS service (src/lib/sms.ts).

@@ -23,11 +23,13 @@ real money.
 4. **Real fiat on/off-ramp.** `topUpCustodial` / `withdrawCustodial` mint/move test tokens. Integrate
    a licensed payment processor for the fiat↔stablecoin conversion, with idempotent retries and a
    held-pending state on partial failure.
-5. **Real SMS + email delivery.** ~~SMS~~ **SMS is integrated** — `src/lib/sms.ts` supports Twilio and
-   Fast2SMS (India OTP route), selected by `SMS_PROVIDER` in `.env`, with a safe mock fallback; OTP
-   sending and the notification SMS channel both route through it. Remaining: set real provider
-   credentials in the deployment env, add the OTP **voice fallback**, and integrate a real **email**
-   provider (Resend/SES) — email verification/reset links are still console-mocked.
+5. **Real SMS + email delivery — both integrated.** SMS: `src/lib/sms.ts` (Twilio / Fast2SMS via
+   `SMS_PROVIDER`; verified with a real text). Email: `src/lib/email.ts` (Resend / Brevo via
+   `EMAIL_PROVIDER`; branded templates, absolute links via `APP_BASE_URL`) — wired into the email
+   verification link, password reset (routed to the account's email, or by SMS when there's no
+   email on file), and the notification email channel. Both fall back to a console log on
+   missing/failing credentials. Remaining: production credentials + a verified sending domain in
+   the deploy env, and the OTP **voice fallback**.
 6. **Legal + AML review, per jurisdiction.** Money-movement licensing, the enforceability of on-chain
    agreements, data-protection (KYC PII), and an AML/sanctions-screening flow feeding the compliance
    hold queue. This gates *where* you can launch.
@@ -63,7 +65,7 @@ real money.
 | Custody / keys | `src/lib/chain/keystore.ts` | HSM / managed custody + gasless relayer |
 | KYC | `submitKycAction` (auto-approve) | real KYC/liveness vendor |
 | Fiat on/off-ramp | `topUpCustodial` / `withdrawCustodial` | licensed payment processor |
-| Email | `src/lib/notify/channels.ts`, `verification.ts` | Resend/SES |
+| Email | ✅ integrated (`src/lib/email.ts` — Resend/Brevo via `EMAIL_PROVIDER`) | production key + verified sending domain |
 | SMS | ✅ integrated (`src/lib/sms.ts` — Twilio/Fast2SMS via `SMS_PROVIDER`) | set real credentials in the deploy env |
 | Rate limiting | `src/lib/rateLimit.ts` (in-memory) | Redis/Upstash shared store |
 | Chain network | `CHAIN_*` env (local/testnet) | audited mainnet deploy |

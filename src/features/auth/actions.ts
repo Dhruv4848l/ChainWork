@@ -337,7 +337,7 @@ export async function forgotPasswordAction(
     where: { OR: [{ email: normalized }, { phone: normalized }] },
   });
   // Send only if found, but always return the same message (no account enumeration).
-  if (user) await sendPasswordReset(user.id, normalized);
+  if (user) await sendPasswordReset(user.id, { email: user.email, phone: user.phone });
   return {
     ok: true,
     message: "If that account exists, a reset link is on its way.",
