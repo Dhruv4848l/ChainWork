@@ -24,7 +24,16 @@ export default async function EarningsPage() {
       <PageTitle action={<WithdrawButton />}>Earnings &amp; Wallet</PageTitle>
 
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
-        <StatCard label="Wallet balance" value={formatInr(wallet.balanceInr)} accent="bronze" sub={wallet.live ? "live on-chain, in ₹" : "cached · chain offline"} />
+        <StatCard
+          label="Wallet balance"
+          value={formatInr(wallet.balanceInr + wallet.demoCreditInr)}
+          accent="bronze"
+          sub={
+            wallet.demoCreditInr > 0
+              ? `incl. ${formatInr(wallet.demoCreditInr)} demo credit — not withdrawable`
+              : wallet.live ? "live on-chain, in ₹" : "cached · chain offline"
+          }
+        />
         <StatCard label="Released to date" value={formatInr(released)} accent="emerald" />
         <StatCard label="Pending escrow" value={formatInr(pendingTotal)} accent="info" sub="held for you" />
         <StatCard label="Payout to" value={wallet.externalAddress ? "External" : "Custodial"} sub={wallet.externalAddress ? "your wallet" : "ChainWork wallet"} />

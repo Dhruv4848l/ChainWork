@@ -485,6 +485,26 @@ vars at Amoy + a real relayer key.
   value (`password123`) so demo logins are unchanged. NOTE: seed users have `onboarded:false`,
   so a normal login routes them to onboarding — only the dev quick-login jumps to the dashboard.
 
+## Demo roster, demo credit & landing polish (post-Phase-13)
+
+- **Demo credit:** `Wallet.demoCredit` (migration `demo_credit`) — ₹40,000 showcase money on every
+  wallet. Shows in balances as "incl. ₹X demo credit — not withdrawable". **Non-withdrawable by
+  construction:** withdraw only moves the real on-chain balance and demo credit never exists
+  on-chain — there is no code path that can pay it out.
+- **Demo roster:** `scripts/seed-demo-accounts.mjs` (idempotent; re-run after any db:reset) —
+  27 workers (10 Tech & Digital; **Construction & Repair deliberately empty**), 4 clients,
+  **14 jurors** (12 workers + 2 clients, JurorProfiles in admin DB), 2 new admins
+  (moderation@chainwork.local MODERATION_OFFICER, jury.lead@chainwork.local JURY). Passwords:
+  password123 / admin123. Full credential sheet: **docs/ChainWork_Demo_Accounts.docx**
+  (generated file — includes the committed jurors' choice/split/salt so the live cases can be
+  revealed to a verdict in demos, plus the FUTURE feature note: **username + UID system**).
+- **Live cases seeded:** worker-raised dispute (TechNova vs Aarav Mehta, ₹12,000, 5-juror COMMIT,
+  3 committed) + client-raised dispute (Sneha Patil vs Kavita Reddy, ₹4,500, 3-juror COMMIT) +
+  2 OPEN complaints in triage (worker-raised CONDUCT, client-raised NO_SHOW).
+- **Landing polish:** `.cw-3d` card depth + `.cw-sheen`/`.cw-press` button motion in globals.css —
+  hover-capable devices only, fully disabled under prefers-reduced-motion; Button component and
+  hero/nav CTAs use them. Layout identical without motion (non-tech-friendly by design).
+
 ## Reference files (not in this repo — on the developer's machine)
 
 - Spec v2: `C:\Users\ASUS\Downloads\ChainWork_Complete_Specification_v2.docx` (23 sections;

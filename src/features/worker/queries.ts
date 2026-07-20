@@ -8,7 +8,8 @@ import { platformDb } from "@/lib/platformDb";
 
 export async function getWalletChip(userId: string) {
   const wallet = await platformDb.wallet.findUnique({ where: { userId } });
-  return Number(wallet?.balanceCache ?? 0);
+  // Displayed balance = cached on-chain balance + showcase demo credit.
+  return Number(wallet?.balanceCache ?? 0) + Number(wallet?.demoCredit ?? 0);
 }
 
 export async function getWorkerDashboard(userId: string) {

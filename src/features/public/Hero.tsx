@@ -80,7 +80,7 @@ export function Hero() {
         <div className="cw-fade-3 mt-14 flex flex-wrap gap-4">
           <Link
             href="/signup"
-            className="rounded-full bg-bronze px-8 py-4 text-sm font-semibold text-[#1a1512] transition-transform hover:scale-[1.04] hover:bg-bronze-hover"
+            className="cw-sheen cw-press rounded-full bg-bronze px-8 py-4 text-sm font-semibold text-[#1a1512] transition-colors hover:bg-bronze-hover"
           >
             Find Work
           </Link>

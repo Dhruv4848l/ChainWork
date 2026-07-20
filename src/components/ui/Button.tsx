@@ -17,8 +17,11 @@ import { ButtonHTMLAttributes, forwardRef } from "react";
 type Variant = "primary" | "secondary" | "ghost" | "success" | "danger";
 type Size = "sm" | "md";
 
+// cw-sheen (hover shine) + cw-press (tactile press) are motion garnish only —
+// they no-op on touch devices and under prefers-reduced-motion, so the buttons
+// stay plain, obvious, and easy for non-technical users.
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
+  "cw-sheen cw-press inline-flex items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
 
 const sizes: Record<Size, string> = {
   sm: "text-xs px-4 py-2",

@@ -448,6 +448,10 @@ model Wallet {
   externalAddress  String?  @unique
   // Cached balance for display; source of truth is on-chain (Phase 9).
   balanceCache     Decimal  @default(0) @db.Decimal(14, 2)
+  // Showcase-only demo credit (testing): counts toward the displayed balance,
+  // follows the same escrow rules in demos, but can NEVER be withdrawn — the
+  // withdraw path only ever moves the real on-chain balance.
+  demoCredit       Decimal  @default(0) @db.Decimal(14, 2)
   currency         String   @default("INR")
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

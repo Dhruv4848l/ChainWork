@@ -42,6 +42,8 @@ export interface WalletSummary {
   externalAddress: string | null;
   payoutAddress: `0x${string}`;
   balanceInr: number;
+  /** Showcase-only demo credit: displayed and usable in demos, NEVER withdrawable. */
+  demoCreditInr: number;
   currency: string;
   /** false when the on-chain read failed and balanceInr is the last cached value. */
   live: boolean;
@@ -60,15 +62,16 @@ export async function getWalletSummary(userId: string): Promise<WalletSummary> {
   const external = wallet?.externalAddress ?? null;
   const payout = (external && isAddress(external) ? external : custodial) as `0x${string}`;
 
+  const demoCreditInr = wallet ? Number(wallet.demoCredit) : 0;
   try {
     const balanceInr = toInr(await balanceWei(payout));
     // keep the cached balance roughly in sync for cheap reads elsewhere
     await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: balanceInr } });
-    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, currency: "INR", live: true };
+    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, demoCreditInr, currency: "INR", live: true };
   } catch (e) {
     console.warn(`getWalletSummary: on-chain read failed, using cached balance — ${(e as Error).message.slice(0, 80)}`);
     const balanceInr = wallet ? Number(wallet.balanceCache) : 0;
-    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, currency: "INR", live: false };
+    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, demoCreditInr, currency: "INR", live: false };
   }
 }
 
@@ -77,6 +80,10 @@ export async function getWalletSummary(userId: string): Promise<WalletSummary> {
  * user's bank/UPI. On testnet there's no real bank, so we move the tokens out of the
  * custodial wallet to the platform relayer (the "off-ramp sink") on-chain and record
  * it — the balance really drops. TODO(production): call a real off-ramp provider here.
+ *
+ * DEMO-CREDIT RULE: this reads the REAL on-chain balance only. The Wallet.demoCredit
+ * showcase money never exists on-chain, so it can never leave through here — that's
+ * the "non-withdrawable" guarantee, enforced structurally rather than by an if.
  */
 export async function withdrawCustodial(userId: string): Promise<{ txHash: `0x${string}`; amountInr: number } | null> {
   const account = await accountForUser(userId);

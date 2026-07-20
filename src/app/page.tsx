@@ -67,7 +67,7 @@ export default async function HomePage() {
         <Eyebrow>How it works</Eyebrow>
         <div className="grid gap-6 md:grid-cols-3">
           {STEPS.map((s) => (
-            <div key={s.n} className="rounded-2xl border border-line bg-card p-8">
+            <div key={s.n} className="cw-3d rounded-2xl border border-line bg-card p-8">
               <div className="mb-4 font-display text-4xl text-bronze">{s.n}</div>
               <h3 className="mb-2.5 text-xl font-semibold text-ink">{s.t}</h3>
               <p className="text-[15px] font-light leading-relaxed text-ink2">{s.d}</p>
@@ -84,7 +84,7 @@ export default async function HomePage() {
             <Link
               key={c.id}
               href="/categories"
-              className="rounded-2xl border border-line bg-card p-6 transition-colors hover:border-bronze/50"
+              className="cw-3d rounded-2xl border border-line bg-card p-6"
             >
               <div className="mb-1.5 text-[17px] font-semibold text-ink">
                 {c.icon} {c.name}
@@ -100,7 +100,7 @@ export default async function HomePage() {
         <SectionHead title="Verified workers" href="/categories" cta="Browse showcase →" />
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {workers.map((w) => (
-            <div key={w.id} className="flex flex-col gap-3 rounded-2xl border border-line bg-card p-6">
+            <div key={w.id} className="cw-3d flex flex-col gap-3 rounded-2xl border border-line bg-card p-6">
               <div className="flex h-14 w-14 items-center justify-center rounded-full border border-line bg-card2 font-display text-lg text-bronze">
                 {w.name.charAt(0)}
               </div>
@@ -131,7 +131,7 @@ export default async function HomePage() {
             <Link
               key={j.id}
               href="/signup"
-              className="flex flex-col gap-2.5 rounded-2xl border border-line bg-card p-6 transition-colors hover:border-bronze/50"
+              className="cw-3d flex flex-col gap-2.5 rounded-2xl border border-line bg-card p-6"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-ink3">{j.category}</span>
@@ -154,7 +154,7 @@ export default async function HomePage() {
         <Eyebrow tone="emerald">What people say</Eyebrow>
         <div className="grid gap-6 md:grid-cols-3">
           {QUOTES.map((q) => (
-            <div key={q.who} className="rounded-2xl border border-line bg-card p-8">
+            <div key={q.who} className="cw-3d rounded-2xl border border-line bg-card p-8">
               <p className="mb-5 text-[15px] font-light leading-relaxed text-ink">“{q.text}”</p>
               <div className="font-serif text-[15px] font-medium italic text-bronze">{q.who}</div>
               <div className="mt-0.5 text-xs text-ink3">{q.role}</div>
@@ -171,7 +171,7 @@ export default async function HomePage() {
             <Link
               key={p.id}
               href={`/blog/${p.slug}`}
-              className="overflow-hidden rounded-2xl border border-line bg-card transition-colors hover:border-bronze/50"
+              className="cw-3d overflow-hidden rounded-2xl border border-line bg-card"
             >
               <div className="flex h-36 items-center justify-center bg-card2 font-display text-3xl text-bronze/40">
                 {p.tag}
@@ -210,7 +210,7 @@ export default async function HomePage() {
       >
         <h2 className="m-0 mb-10 font-display text-[clamp(40px,5.5vw,72px)] text-ink">Ready when you are.</h2>
         <div className="flex flex-wrap justify-center gap-4">
-          <Link href="/signup" className="rounded-full bg-bronze px-8 py-4 text-sm font-semibold text-[#1a1512] transition-transform hover:scale-[1.04] hover:bg-bronze-hover">
+          <Link href="/signup" className="cw-sheen cw-press rounded-full bg-bronze px-8 py-4 text-sm font-semibold text-[#1a1512] transition-colors hover:bg-bronze-hover">
             Find Work
           </Link>
           <Link href="/signup" className="rounded-full border border-line-strong px-8 py-4 text-sm font-medium text-ink transition-transform hover:scale-[1.04] hover:border-bronze">

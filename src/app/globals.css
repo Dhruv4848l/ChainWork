@@ -196,6 +196,42 @@ body {
   0% { transform: translateY(8px); opacity: 0; }
   100% { transform: translateY(0); opacity: 1; }
 }
+
+/* ---- Landing 3D + button motion (accessibility-first) --------------------
+   Depth and shine are hover-only enhancements: touch devices and users with
+   prefers-reduced-motion get the exact same layout, plainly. Buttons stay
+   full-size, high-contrast, and clearly labeled — the motion is garnish. */
+.cw-3d {
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  will-change: transform;
+}
+@media (hover: hover) {
+  .cw-3d:hover {
+    transform: perspective(900px) translateY(-6px) rotateX(1.6deg) scale(1.015);
+    box-shadow: 0 18px 40px -18px rgba(217, 160, 102, 0.35), 0 6px 18px -8px rgba(0, 0, 0, 0.5);
+    border-color: color-mix(in srgb, var(--brand-bronze, #D9A066) 55%, transparent);
+  }
+}
+.cw-sheen { position: relative; overflow: hidden; }
+.cw-sheen::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: -75%;
+  width: 50%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.45s ease;
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .cw-sheen:hover::after { left: 125%; }
+}
+.cw-press { transition: transform 0.12s ease; }
+.cw-press:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .cw-3d, .cw-3d:hover, .cw-press, .cw-press:active { transform: none; transition: none; }
+  .cw-sheen::after { display: none; }
+}
 @keyframes cwShimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }

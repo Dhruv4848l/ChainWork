@@ -59,7 +59,7 @@ export function PublicNav({ variant = "solid" }: { variant?: "hero" | "solid" })
           </Link>
           <Link
             href="/signup"
-            className="rounded-full bg-bronze px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#1a1512] transition-colors hover:bg-bronze-hover"
+            className="cw-sheen cw-press rounded-full bg-bronze px-5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#1a1512] transition-colors hover:bg-bronze-hover"
           >
             Get Started
           </Link>
