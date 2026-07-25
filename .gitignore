@@ -45,3 +45,6 @@ next-env.d.ts
 
 # dev custodial-wallet keystore (Phase 7) — local userId->account-index map
 /.chain-keystore.json
+
+# demo credential sheet (passwords + juror salts) — kept local only
+docs/ChainWork_Demo_Accounts.docx
