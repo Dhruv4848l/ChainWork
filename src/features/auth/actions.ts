@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { createSession, destroySession } from "@/lib/auth/session";
 import { getCurrentUser } from "@/lib/auth/currentUser";
 import { assertKycVerified } from "@/lib/auth/guards";
+import { safeReturnTo } from "@/lib/auth/safeRedirect";
 import { rateLimit, rateLimitReset } from "@/lib/rateLimit";
 import {
   sendPhoneOtp,
@@ -33,6 +34,12 @@ function fakeAddress(seed: string): string {
 
 function str(fd: FormData, key: string): string {
   return String(fd.get(key) ?? "").trim();
+}
+
+/** Parse an optional rupee amount from a form field: "" / junk / 0 → null. */
+function money(raw: string): number | null {
+  const n = Number(raw.replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +153,8 @@ export async function loginAction(
     await sendPhoneOtp(user.id, user.phone ?? "");
     redirect("/verify/phone");
   }
-  if (returnTo) redirect(returnTo);
+  const safeReturn = safeReturnTo(returnTo, "");
+  if (safeReturn) redirect(safeReturn);
   if (!user.onboarded)
     redirect(user.role === "WORKER" ? "/onboarding/worker" : "/onboarding/client");
   redirect(user.role === "WORKER" ? "/dashboard/worker" : "/dashboard/client");
@@ -230,8 +238,11 @@ export async function completeWorkerOnboardingAction(
   if (user.role !== "WORKER") redirect("/onboarding/client");
 
   const headline = str(formData, "headline");
+  const bio = str(formData, "bio");
   const location = str(formData, "location");
   const experienceYears = parseInt(str(formData, "experienceYears") || "0", 10);
+  const rateHourly = money(str(formData, "rateHourly"));
+  const rateWeekly = money(str(formData, "rateWeekly"));
   const availability = str(formData, "availability") || "Available This Week";
   const languages = str(formData, "languages")
     .split(",")
@@ -243,8 +254,11 @@ export async function completeWorkerOnboardingAction(
     where: { userId: user.id },
     data: {
       headline: headline || null,
+      bio: bio || null,
       location: location || null,
       experienceYears: Number.isFinite(experienceYears) ? experienceYears : 0,
+      rateHourly,
+      rateWeekly,
       availability,
       languages,
       skills: {
@@ -302,7 +316,8 @@ export async function submitKycAction(
   });
 
   // Return the user to the money action they were mid-way through, if any.
-  if (returnTo) redirect(returnTo);
+  const safeReturn = safeReturnTo(returnTo, "");
+  if (safeReturn) redirect(safeReturn);
   redirect(user.role === "WORKER" ? "/dashboard/worker" : "/dashboard/client");
 }
 
