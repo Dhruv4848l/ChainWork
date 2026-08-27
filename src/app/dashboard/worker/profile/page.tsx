@@ -37,8 +37,13 @@ export default async function WorkerProfilePage() {
       </div>
 
       <Card className="mb-3.5 flex flex-col gap-6 p-7 sm:flex-row sm:items-start">
-        <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full border border-bronze/40 bg-card2 font-display text-3xl text-bronze">
-          {data.name.charAt(0)}
+        <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-bronze/40 bg-card2 font-display text-3xl text-bronze">
+          {data.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={data.avatarUrl} alt={data.name} className="h-full w-full object-cover" />
+          ) : (
+            data.name.charAt(0)
+          )}
         </div>
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-3">
@@ -91,14 +96,21 @@ export default async function WorkerProfilePage() {
         <Card className="p-6">
           <h3 className="mb-3.5 text-[15px] font-semibold text-ink">Portfolio</h3>
           <div className="mb-5 grid grid-cols-3 gap-2.5">
-            {(p.portfolioImages.length ? p.portfolioImages : ["Add work photos"]).map((label, i) => (
-              <div
-                key={i}
-                className="flex aspect-square items-center justify-center rounded-[10px] border border-hair bg-card2 p-1 text-center text-[9px] text-ink3"
+            {p.portfolioImages.length ? (
+              p.portfolioImages.map((u, i) => (
+                <div key={i} className="aspect-square overflow-hidden rounded-[10px] border border-hair bg-card2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt="Work photo" className="h-full w-full object-cover" />
+                </div>
+              ))
+            ) : (
+              <Link
+                href="/dashboard/worker/profile/edit"
+                className="col-span-3 flex aspect-[3/1] items-center justify-center rounded-[10px] border border-dashed border-hair bg-card2 text-[11px] text-ink3 hover:border-bronze hover:text-bronze"
               >
-                {label}
-              </div>
-            ))}
+                + Add work photos
+              </Link>
+            )}
           </div>
           <h3 className="mb-2.5 text-[15px] font-semibold text-ink">Documents</h3>
           <div className="flex items-center justify-between border-b border-hair py-2.5 text-[13px]">

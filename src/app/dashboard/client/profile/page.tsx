@@ -1,6 +1,7 @@
 import { Card, StatusBadge } from "@/components/ui";
 import { requireRole } from "@/lib/auth/guards";
 import { getClientProfile } from "@/features/client/queries";
+import { AvatarUpload } from "@/features/media/ImageUpload";
 
 export default async function ClientProfilePage() {
   const user = await requireRole("CLIENT");
@@ -12,9 +13,7 @@ export default async function ClientProfilePage() {
       <h1 className="mb-5 text-[28px] font-semibold text-ink">Client Profile</h1>
 
       <Card className="mb-3.5 flex flex-col gap-6 p-7 sm:flex-row sm:items-start">
-        <div className="flex h-20 w-20 flex-shrink-0 items-center justify-center rounded-full border border-bronze/40 bg-card2 font-display text-3xl text-bronze">
-          {user.name.charAt(0)}
-        </div>
+        <AvatarUpload name={user.name} initialUrl={user.avatarUrl} />
         <div className="flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="m-0 text-[22px] font-semibold text-ink">
