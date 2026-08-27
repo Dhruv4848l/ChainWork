@@ -1,0 +1,39 @@
+# Escrow timing driver.
+#
+# Vercel's Hobby plan only runs a cron ONCE A DAY, which is too coarse for the
+# escrow engine (verification-window reminders, then auto-release). This workflow
+# calls the same endpoint every 10 minutes as the real driver; the daily Vercel
+# cron in vercel.json stays as a backstop. On a Vercel Pro plan you can instead set
+# that schedule to "*/5 * * * *" and disable this workflow.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   CRON_URL     https://<your-domain>/api/cron/escrow
+#   CRON_SECRET  the same value as the CRON_SECRET env var on the host
+name: escrow-cron
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the escrow tick
+        env:
+          CRON_URL: ${{ secrets.CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "CRON_URL / CRON_SECRET not configured — skipping."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/tick.json -w '%{http_code}' \
+            -H "x-cron-secret: $CRON_SECRET" "$CRON_URL")
+          cat /tmp/tick.json
+          echo
+          if [ "$code" != "200" ]; then
+            echo "escrow tick returned HTTP $code"
+            exit 1
+          fi

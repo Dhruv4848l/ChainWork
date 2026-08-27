@@ -1,4 +1,5 @@
 import "server-only";
+import { recordDevMessage } from "@/lib/devOutbox";
 
 /*
   Real SMS delivery with a pluggable provider, selected by SMS_PROVIDER in .env:
@@ -37,6 +38,14 @@ export function toE164(phone: string): string {
 
 function mockLog(phone: string, text: string): SmsResult {
   console.log(`\n[SMS mock] → ${phone}: ${text}\n`);
+  // Mirror it into the gitignored dev outbox so automated flows (and humans who
+  // don't want to scroll the terminal) can read the code back. Dev-only, mock-only.
+  recordDevMessage({
+    channel: "sms",
+    to: phone,
+    text,
+    code: text.match(/\b(\d{6})\b/)?.[1],
+  });
   return { delivered: false, provider: "mock" };
 }
 

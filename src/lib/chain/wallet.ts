@@ -2,6 +2,7 @@ import "server-only";
 import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, isAddress } from "viem";
 import { RPC_URL, TOKEN_ADDRESS, TOKEN_DECIMALS, erc20Abi, activeChain } from "./config";
 import { relayerAccount, accountForUser, provisionWallet } from "./keystore";
+import { ensureGas } from "./gas";
 import { platformDb } from "@/lib/platformDb";
 
 /*
@@ -89,6 +90,7 @@ export async function withdrawCustodial(userId: string): Promise<{ txHash: `0x${
   const account = await accountForUser(userId);
   const bal = await balanceWei(account.address);
   if (bal === BigInt(0)) return null;
+  await ensureGas(account.address); // the transfer out is signed by the user
   const wc = createWalletClient({ account, chain, transport: http(RPC_URL) });
   const txHash = await wc.writeContract({
     address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer",

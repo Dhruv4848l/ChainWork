@@ -20,6 +20,7 @@ import {
   activeChain,
 } from "./config";
 import { relayerAccount, accountForUser } from "./keystore";
+import { ensureGas } from "./gas";
 import { payoutAddressFor } from "./wallet";
 
 /*
@@ -28,9 +29,9 @@ import { payoutAddressFor } from "./wallet";
 
   Custodial model (dev): the platform relayer (account 0) holds ATTESTOR + DISPUTE
   roles and mints the test stablecoin (mock fiat on-ramp). Client/worker custodial
-  accounts sign their own party actions (fund, lockStake, settle). On the local
-  Hardhat node these accounts are pre-funded with gas; on a real testnet a gasless
-  relayer would sponsor gas (Phase 9 / pre-mainnet hardening).
+  accounts sign their own party actions (fund, lockStake, settle). Those wallets are
+  pre-funded with gas on the local Hardhat node and sponsored by the relayer on a
+  real testnet — see ensureGas in ./gas.ts.
 */
 
 const chain = activeChain();
@@ -79,6 +80,7 @@ async function ensureApproval(account: Account, needed: bigint) {
     address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "allowance", args: [account.address, ESCROW_ADDRESS],
   })) as bigint;
   if (allowance >= needed) return;
+  await ensureGas(account.address); // the approve is signed by the user
   const wc = walletFor(account);
   const hash = await wc.writeContract({
     address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "approve", args: [ESCROW_ADDRESS, maxUint256], chain, account,
@@ -97,6 +99,7 @@ export async function fundPhase(phaseId: string, clientUserId: string, workerUse
   const amount = toTokenUnits(amountInr);
   await ensureStablecoin(client.address, amount);
   await ensureApproval(client, amount);
+  await ensureGas(client.address); // fundPhase records msg.sender as the client
   const wc = walletFor(client);
   const hash = await wc.writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhase", args: [keyFor(phaseId), workerAddr, amount], chain, account: client,
@@ -162,6 +165,7 @@ export async function lockStake(hireId: string, workerUserId: string, clientUser
   const amount = toTokenUnits(amountInr);
   await ensureStablecoin(worker.address, amount);
   await ensureApproval(worker, amount);
+  await ensureGas(worker.address); // the stake is locked by the worker themselves
   const hash = await walletFor(worker).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "lockStake", args: [keyFor(hireId), client.address, amount], chain, account: worker,
   });

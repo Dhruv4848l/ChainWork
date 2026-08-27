@@ -32,6 +32,11 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but the TEMPLATES are part of the repo — they hold no secrets and a fresh
+# clone needs them to know what to fill in.
+!.env.example
+!.env.production.example
+!contracts/.env.example
 
 # vercel
 .vercel
@@ -48,3 +53,12 @@ next-env.d.ts
 
 # demo credential sheet (passwords + juror salts) — kept local only
 docs/ChainWork_Demo_Accounts.docx
+
+# dev outbox — mock SMS/email mirror used by scripts/demo-capture.mjs
+/.dev-outbox.json
+
+# generated demo walkthrough screenshots (regenerate with `npm run demo:capture`)
+# docs/images/demo/  <- kept in git on purpose so the walkthrough renders on GitHub
+
+# local docx review scratch (extracted images/xml) — not part of the project
+/docx-review-temp/

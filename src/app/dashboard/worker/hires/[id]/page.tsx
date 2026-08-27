@@ -36,7 +36,12 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
     note: PHASE_NOTE[p.status],
   }));
 
-  // The worker can mark a FUNDED/IN_PROGRESS phase delivered (stubbed to Phase 7).
+  const fullySigned = Boolean(
+    hire.contract?.clientSignature && hire.contract?.workerSignature
+  );
+  const youNeedToSign = Boolean(hire.contract && !hire.contract.workerSignature);
+
+  // The worker can mark a FUNDED/IN_PROGRESS phase delivered.
   const actionsByPhase: Record<string, React.ReactNode> = {};
   for (const p of hire.phases) {
     if (p.status === "FUNDED" || p.status === "IN_PROGRESS") {
@@ -66,6 +71,20 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
         )}
       </div>
 
+      {!fullySigned && (
+        <Link
+          href={`/dashboard/worker/hires/${hire.id}/contract`}
+          className="mb-4 block rounded-xl border border-amber/40 bg-amber/10 px-5 py-4 text-[13px] text-amber hover:border-amber"
+        >
+          <span className="font-semibold">
+            {youNeedToSign
+              ? "Contract awaiting your signature"
+              : "Waiting on the client's signature"}
+          </span>{" "}
+          — nothing is funded until both parties sign. Read the terms &amp; sign →
+        </Link>
+      )}
+
       <div className="grid gap-3.5 lg:grid-cols-[1.5fr_1fr]">
         <div className="flex flex-col gap-3.5">
           <Card className="p-6">
@@ -87,7 +106,11 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
                 scope: hire.contract.scope,
                 cancellationTerms: hire.contract.cancellationTerms,
                 onChainEscrowAddress: hire.contract.onChainEscrowAddress,
-                acceptedByBoth: hire.contract.acceptedByClient && hire.contract.acceptedByWorker,
+                acceptedByBoth: fullySigned,
+                clientSignature: hire.contract.clientSignature,
+                workerSignature: hire.contract.workerSignature,
+                documentHash: hire.contract.documentHash,
+                contractHref: `/dashboard/worker/hires/${hire.id}/contract`,
               }}
             />
           )}

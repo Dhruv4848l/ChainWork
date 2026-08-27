@@ -231,7 +231,7 @@ async function main() {
     data: {
       clientId: imran.id, title: "Shop interior rewiring",
       description: "Full rewiring of a 1200 sq ft retail shop: prep, wiring & panel, finish & testing. 3 phases.",
-      categoryId: catByName["Electrical"], status: "PUBLISHED",
+      categoryId: catByName["Electrical & Appliances"], status: "PUBLISHED",
       location: "Bengaluru", startDate: daysAgo(10), endDate: daysAhead(5),
       fundingMode: "FUND_AT_HIRE", publishedAt: daysAgo(14), expiresAt: daysAhead(20),
       roleLineItems: {
@@ -356,7 +356,7 @@ async function main() {
     data: {
       clientId: imran.id, title: "Kitchen chimney & wiring fix",
       description: "Replace kitchen chimney wiring and install new switchboard.",
-      categoryId: catByName["Electrical"], status: "ARCHIVED",
+      categoryId: catByName["Electrical & Appliances"], status: "ARCHIVED",
       publishedAt: daysAgo(40), startDate: daysAgo(35), endDate: daysAgo(33),
       roleLineItems: { create: [{ roleName: "Electrician", skillId: skillByName["Electrician"], headcount: 1, perPersonRate: 3500, hiredCount: 1 }] },
     },

@@ -19,6 +19,8 @@ export default async function EditWorkerProfilePage() {
           bio: p.bio ?? "",
           location: p.location ?? "",
           experienceYears: p.experienceYears,
+          rateHourly: p.rateHourly ? String(p.rateHourly) : "",
+          rateWeekly: p.rateWeekly ? String(p.rateWeekly) : "",
           availability: p.availability ?? "",
           languages: p.languages.join(", "),
         }}

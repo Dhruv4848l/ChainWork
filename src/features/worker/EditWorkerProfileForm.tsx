@@ -31,6 +31,8 @@ export function EditWorkerProfileForm({
     bio: string;
     location: string;
     experienceYears: number;
+    rateHourly: string;
+    rateWeekly: string;
     availability: string;
     languages: string;
   };
@@ -82,6 +84,10 @@ export function EditWorkerProfileForm({
       <div className="grid grid-cols-2 gap-4">
         <Field label="Location" name="location" defaultValue={initial.location} />
         <Field label="Years of experience" name="experienceYears" type="number" defaultValue={String(initial.experienceYears)} />
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Charge per hour (₹)" name="rateHourly" type="number" defaultValue={initial.rateHourly} placeholder="e.g. 700" />
+        <Field label="Charge per week (₹)" name="rateWeekly" type="number" defaultValue={initial.rateWeekly} placeholder="e.g. 26000" />
       </div>
       <Field label="Languages (comma-separated)" name="languages" defaultValue={initial.languages} />
 

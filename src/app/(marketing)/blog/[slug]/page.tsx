@@ -2,6 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getBlogPost } from "@/features/public/queries";
 
+/*
+  ISR: this page reads the database, so a purely static build would freeze its content
+  at deploy time — posts are published/moderated from the admin console. Re-render at
+  most once a minute instead.
+*/
+export const dynamic = "force-dynamic";
+
 export default async function BlogPostPage({
   params,
 }: {

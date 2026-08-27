@@ -1,4 +1,5 @@
 import "server-only";
+import { recordDevMessage } from "@/lib/devOutbox";
 
 /*
   Real email delivery with a pluggable provider, selected by EMAIL_PROVIDER in .env:
@@ -40,6 +41,9 @@ function mockLog(to: string, subject: string, html: string): EmailResult {
   const link = html.match(/href="([^"]+)"/)?.[1];
   const code = html.match(/>(\d{6})</)?.[1];
   console.log(`\n[EMAIL mock] → ${to} | ${subject}${link ? ` | link: ${link}` : ""}${code ? ` | code: ${code}` : ""}\n`);
+  // Mirror into the gitignored dev outbox (see src/lib/devOutbox.ts) so the
+  // verification link can be followed without reading the terminal. Dev + mock only.
+  recordDevMessage({ channel: "email", to, subject, text: html, link, code });
   return { delivered: false, provider: "mock" };
 }
 

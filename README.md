@@ -1,3 +1,21 @@
+# ChainWork
+
+A role-based marketplace for physical, time-boxed, local work, with a trust layer:
+verified identities, phase-based blockchain escrow, and a peer-jury dispute system.
+
+**Testnet only.** No real funds move anywhere in this build — see
+[`docs/PRE_MAINNET_CHECKLIST.md`](docs/PRE_MAINNET_CHECKLIST.md).
+
+| Start here | |
+|---|---|
+| **See the whole product in one read** | [`docs/DEMO_WALKTHROUGH.md`](docs/DEMO_WALKTHROUGH.md) — one project end to end, 62 screenshots, with a *"in this demo / with real money"* note at every payment step |
+| Regenerate that walkthrough | `npm run demo:setup` once, then `npm run demo:capture` |
+| Architecture & conventions | [`CLAUDE.md`](CLAUDE.md) |
+| Build history | [`PROGRESS.md`](PROGRESS.md) |
+| Edge cases · security · pre-mainnet | [`docs/`](docs/) |
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

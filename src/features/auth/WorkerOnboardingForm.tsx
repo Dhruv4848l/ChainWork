@@ -49,6 +49,27 @@ export function WorkerOnboardingForm({ skills }: { skills: Skill[] }) {
         </div>
 
         <div>
+          <LabeledInput
+            name="bio"
+            label="Experience — what you've built or done"
+            placeholder="e.g. 6 yrs Android — Kotlin, Jetpack Compose, Retrofit; 14 apps shipped to Play Store"
+          />
+        </div>
+
+        <div>
+          <p className="mb-2 text-xs font-medium text-ink2">
+            Your charges — quote either or both. Clients see these before they invite you.
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <LabeledInput name="rateHourly" label="Per hour (₹)" type="number" min={0} placeholder="e.g. 700" />
+            <LabeledInput name="rateWeekly" label="Per week (₹)" type="number" min={0} placeholder="e.g. 26000" />
+          </div>
+          <p className="mt-1.5 text-[11.5px] text-ink3">
+            Reference rates only — the binding number is the one agreed on each job.
+          </p>
+        </div>
+
+        <div>
           <p className="mb-2 text-xs font-medium text-ink2">Your skills — pick from any domain</p>
           <div className="flex max-h-72 flex-col gap-3.5 overflow-y-auto rounded-lg border border-hair bg-bg/50 p-3.5">
             {[...new Set(skills.map((s) => s.category))].map((cat) => (

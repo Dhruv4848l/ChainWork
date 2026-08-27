@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { getCategoryShowcase } from "@/features/public/queries";
 
+/*
+  ISR: this page reads the database, so a purely static build would freeze its content
+  at deploy time — category counts move as jobs are posted. Re-render at most once a
+  minute instead.
+*/
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Categories — ChainWork" };
 
 export default async function CategoriesPage() {

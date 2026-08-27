@@ -505,6 +505,59 @@ vars at Amoy + a real relayer key.
   hover-capable devices only, fully disabled under prefers-reduced-motion; Button component and
   hero/nav CTAs use them. Layout identical without motion (non-tech-friendly by design).
 
+## Milestone contracts, digital signatures & the demo walkthrough (post-Phase-13)
+
+Three gaps between the built product and the story we demo were closed here.
+
+- **Worker charges (WK-07).** `WorkerProfile.rateHourly` + `rateWeekly` (migration
+  `milestones_and_signatures`). Captured in AUTH-07 onboarding (alongside a proper
+  experience/bio field), editable in WK-03, shown on WK-02, on the WK-07 Rates screen
+  (rebuilt around published charges rather than just the skill list) and on the CL-05
+  applicant card next to the rate quoted for that job. Reference rates only — the
+  binding number stays the per-hire agreed rate.
+- **Milestone plan at hire time.** `acceptApplicantAction` used to silently create ONE
+  `Full job` phase; it is now a redirect only. The real path is
+  **CL-05 → `/dashboard/client/offer/[applicationId]`** (`MilestonePlanBuilder`) →
+  `createHireWithMilestonesAction` in `src/features/contracts/actions.ts`, which
+  validates 2–8 phases, non-empty names, positive amounts and **sum === agreed total**
+  server-side, then creates Hire + an UNSIGNED Contract + one Phase per milestone.
+  Suggested phase names adapt to software vs physical work.
+- **Two-sided digital signatures.** `Contract` gained `documentHash`,
+  `client/workerSignature`, `client/workerSignedAt`, `client/workerSignedIp`.
+  `src/features/contracts/contractText.ts` renders the ONE canonical document
+  (parties → engagement → scope → milestone schedule → 10 fixed escrow/dispute clauses
+  → cancellation) and SHA-256s it; both `/dashboard/client|worker/hires/[id]/contract`
+  render it through the shared `ContractSigningScreen`, so the two sides provably
+  cannot see different terms. Signing = typing your full legal name, checked against
+  the account name, stamped with time + IP, bound to the hash. The second signer's
+  recomputed hash must match the first's or the contract is void.
+  **THE GATE: `fundPhaseAction` refuses to move escrow until both signatures exist**
+  (checked before the KYC gate so the user hears the real blocker first); the hire
+  pages show a blocking banner and hide Fund buttons until then.
+
+- **Dev outbox** `src/lib/devOutbox.ts` — the mock SMS/email providers now also mirror
+  every message to gitignored `.dev-outbox.json` (dev + mock path only; real
+  Twilio/Resend sends never reach it). OTP codes are bcrypt-hashed in the DB and so
+  unreadable; this is what makes the signup flow scriptable.
+
+- **`scripts/demo-capture.mjs` + `npm run demo:capture`** drives the ENTIRE story in a
+  real browser and writes 62 numbered screenshots to `docs/images/demo/` plus
+  `docs/demo-run.json` (real tx hashes, addresses, balances, contract hash): worker
+  signup w/ OTP + email link → experience & charges → client business signup → 5-step
+  Android job post → apply → 5-phase plan (₹15k/25k/30k/30k/20k of ₹1,20,000) → both
+  sign → wallet on-ramp → phase 1 full cycle → phase 2 with a revision round → **phase 3
+  auto-release** (chain fast-forwarded via `evm_increaseTime`, deadline backdated, cron
+  ticked until `autoReleased > 0`) → phases 4–5 → mutual reviews → withdrawal.
+  Fresh unique accounts per run, so it's safely repeatable.
+  Setup once: `npm run demo:setup`. Watch it: `npm run demo:capture:headed`.
+
+- **[docs/DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md)** is the narrated version of
+  that run, with a **"in this demo / with real money"** pair at every money step and an
+  appendix mapping each simulated piece to the real one and the single env var or
+  function body that swaps it. `python scripts/build-demo-docx.py` re-renders it as
+  `docs/ChainWork_Demo_Walkthrough.docx` with the screenshots embedded (placeholders
+  until the capture has been run).
+
 ## Reference files (not in this repo — on the developer's machine)
 
 - Spec v2: `C:\Users\ASUS\Downloads\ChainWork_Complete_Specification_v2.docx` (23 sections;

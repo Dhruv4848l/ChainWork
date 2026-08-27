@@ -32,10 +32,17 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
     dueDate: p.dueDate, status: p.status, note: PHASE_NOTE[p.status],
   }));
 
-  // A PENDING_FUNDING phase is fundable if it's the first phase or the previous one released.
+  // Escrow is locked out entirely until both parties have signed the contract.
+  const fullySigned = Boolean(
+    hire.contract?.clientSignature && hire.contract?.workerSignature
+  );
+  const youNeedToSign = Boolean(hire.contract && !hire.contract.clientSignature);
+
+  // A PENDING_FUNDING phase is fundable if the contract is signed AND it's the first
+  // phase or the previous one released.
   const actionsByPhase: Record<string, React.ReactNode> = {};
   hire.phases.forEach((p, i) => {
-    const fundable = i === 0 || hire.phases[i - 1]?.status === "RELEASED";
+    const fundable = fullySigned && (i === 0 || hire.phases[i - 1]?.status === "RELEASED");
     const controls = (
       <ClientPhaseControls
         phaseId={p.id}
@@ -70,6 +77,18 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
         )}
       </div>
 
+      {!fullySigned && (
+        <Link
+          href={`/dashboard/client/hires/${hire.id}/contract`}
+          className="mb-4 block rounded-xl border border-amber/40 bg-amber/10 px-5 py-4 text-[13px] text-amber hover:border-amber"
+        >
+          <span className="font-semibold">
+            {youNeedToSign ? "Contract awaiting your signature" : "Waiting on the worker's signature"}
+          </span>{" "}
+          — escrow funding is locked until both parties sign. Read &amp; sign →
+        </Link>
+      )}
+
       <div className="grid gap-3.5 lg:grid-cols-[1.5fr_1fr]">
         <div className="flex flex-col gap-3.5">
           <Card className="p-6">
@@ -91,7 +110,11 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
                 scope: hire.contract.scope,
                 cancellationTerms: hire.contract.cancellationTerms,
                 onChainEscrowAddress: hire.contract.onChainEscrowAddress,
-                acceptedByBoth: hire.contract.acceptedByClient && hire.contract.acceptedByWorker,
+                acceptedByBoth: fullySigned,
+                clientSignature: hire.contract.clientSignature,
+                workerSignature: hire.contract.workerSignature,
+                documentHash: hire.contract.documentHash,
+                contractHref: `/dashboard/client/hires/${hire.id}/contract`,
               }}
             />
           )}

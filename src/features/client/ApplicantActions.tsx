@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
-import { acceptApplicantAction, rejectApplicantAction } from "./actions";
+import { rejectApplicantAction } from "./actions";
 
 /*
-  CL-05 applicant row actions. Accept is REAL — it creates a Hire + Contract + Phase
-  and redirects to the hire. Reject is REAL. (Escrow funding is stubbed to Phase 7.)
+  CL-05 applicant row actions. Accept no longer creates the hire on the spot — it
+  opens the offer screen where the client builds the milestone payment plan; the
+  hire + unsigned contract are created from there, and escrow only unlocks once both
+  parties have signed. Reject is immediate.
 */
 export function ApplicantActions({ applicationId }: { applicationId: string }) {
   const [pending, start] = useTransition();
@@ -30,14 +32,9 @@ export function ApplicantActions({ applicationId }: { applicationId: string }) {
       >
         Reject
       </Button>
-      <Button
-        variant="primary"
-        size="sm"
-        disabled={pending}
-        onClick={() => start(() => acceptApplicantAction(applicationId).then(() => {}))}
-      >
-        Accept
-      </Button>
+      <Link href={`/dashboard/client/offer/${applicationId}`}>
+        <Button variant="primary" size="sm">Accept &amp; set milestones</Button>
+      </Link>
     </div>
   );
 }

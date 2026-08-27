@@ -62,7 +62,22 @@ export default async function ApplicantsPage({ params }: { params: Promise<{ id:
                         </StatusBadge>
                       </div>
                       <div className="mt-0.5 text-xs text-ink3">
-                        ★ {rating.toFixed(1)} · {jobs} jobs · {wp?.location ?? "nearby"}
+                        ★ {rating.toFixed(1)} · {jobs} jobs · {wp?.experienceYears ?? 0} yrs · {wp?.location ?? "nearby"}
+                      </div>
+                      <div className="mt-0.5 text-xs text-ink3">
+                        Published charge:{" "}
+                        <span className="text-bronze">
+                          {wp?.rateHourly ? `${formatInr(Number(wp.rateHourly))}/hr` : null}
+                          {wp?.rateHourly && wp?.rateWeekly ? " · " : null}
+                          {wp?.rateWeekly ? `${formatInr(Number(wp.rateWeekly))}/wk` : null}
+                          {!wp?.rateHourly && !wp?.rateWeekly ? "not published" : null}
+                        </span>
+                        {a.proposedRate ? (
+                          <>
+                            {" · Quoted for this job: "}
+                            <span className="font-semibold text-ink">{formatInr(Number(a.proposedRate))}</span>
+                          </>
+                        ) : null}
                       </div>
                       {a.coverNote && <div className="mt-1.5 text-[12.5px] font-light text-ink2">“{a.coverNote}”</div>}
                     </div>

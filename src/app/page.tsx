@@ -10,6 +10,13 @@ import {
 } from "@/features/public/queries";
 
 /*
+  ISR: this page reads the database, so a purely static build would freeze its content
+  at deploy time — the home page shows live jobs, workers and categories. Re-render at
+  most once a minute instead.
+*/
+export const dynamic = "force-dynamic";
+
+/*
   PUB-01 Home. Server component: fetches featured jobs / verified workers /
   categories / blog from the seed DB, then composes the marketing sections around
   the client-side cinematic <Hero />.

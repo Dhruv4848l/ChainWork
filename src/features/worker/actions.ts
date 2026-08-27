@@ -26,6 +26,12 @@ function str(fd: FormData, key: string) {
   return String(fd.get(key) ?? "").trim();
 }
 
+/** Parse an optional rupee amount from a form field: "" / junk / 0 → null. */
+function money(raw: string): number | null {
+  const n = Number(raw.replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // ---------------------------------------------------------------------------
 // REAL: Edit profile (WK-03) — saves every field WK-02 displays.
 // ---------------------------------------------------------------------------
@@ -40,6 +46,8 @@ export async function saveWorkerProfileAction(
   const bio = str(formData, "bio");
   const location = str(formData, "location");
   const experienceYears = parseInt(str(formData, "experienceYears") || "0", 10);
+  const rateHourly = money(str(formData, "rateHourly"));
+  const rateWeekly = money(str(formData, "rateWeekly"));
   const availability = str(formData, "availability");
   const languages = str(formData, "languages").split(",").map((s) => s.trim()).filter(Boolean);
 
@@ -59,6 +67,8 @@ export async function saveWorkerProfileAction(
         bio: bio || null,
         location: location || null,
         experienceYears: Number.isFinite(experienceYears) ? experienceYears : 0,
+        rateHourly,
+        rateWeekly,
         availability: availability || null,
         languages,
         skills: {

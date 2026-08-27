@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { getFeaturedJobs } from "@/features/public/queries";
 
+/*
+  ISR: this page reads the database, so a purely static build would freeze its content
+  at deploy time — the public job board must reflect newly posted jobs. Re-render at
+  most once a minute instead.
+*/
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Open jobs — ChainWork" };
 
 export default async function JobsPage() {

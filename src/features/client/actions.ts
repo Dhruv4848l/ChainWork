@@ -83,65 +83,17 @@ export async function postJobAction(
 }
 
 // ---------------------------------------------------------------------------
-// REAL: Accept an applicant (CL-05) — creates Hire + Contract + Phase records
-// (partial hiring allowed: other slots stay open). Escrow stays UNFUNDED (Phase 7).
-// The hire becomes visible on both the client and worker dashboards.
+// Accept an applicant (CL-05).
+//
+// This now only routes: the hire, its contract and its phases are created by
+// `createHireWithMilestonesAction` (src/features/contracts/actions.ts) once the
+// client has built the milestone payment plan, and escrow stays locked out until
+// both parties have signed. Kept as a redirect so any older link still lands in
+// the right place instead of quietly creating a one-phase hire.
 // ---------------------------------------------------------------------------
 export async function acceptApplicantAction(applicationId: string): Promise<ActionState> {
-  const user = await requireRole("CLIENT");
-
-  const app = await platformDb.jobApplication.findUnique({
-    where: { id: applicationId },
-    include: { job: true, roleLineItem: true },
-  });
-  if (!app || app.job.clientId !== user.id) return { error: "Application not found." };
-  if (app.status === "HIRED") return { error: "This applicant is already hired." };
-
-  const value = Number(app.proposedRate ?? app.roleLineItem.perPersonRate);
-
-  const hire = await platformDb.hire.create({
-    data: {
-      jobId: app.jobId,
-      roleLineItemId: app.roleLineItemId,
-      clientId: user.id,
-      workerId: app.workerId,
-      status: "ACTIVE",
-      totalValue: value,
-      contract: {
-        create: {
-          totalValue: value,
-          startDate: app.job.startDate,
-          endDate: app.job.endDate,
-          scope: app.job.description,
-          cancellationTerms: "10% penalty on pre-work cancellation, per platform policy.",
-          acceptedByClient: true,
-          acceptedByWorker: true,
-          acceptedAt: new Date(),
-        },
-      },
-      phases: {
-        create: [{ index: 1, name: "Full job", amount: value, dueDate: app.job.endDate, status: "PENDING_FUNDING" }],
-      },
-    },
-  });
-
-  await platformDb.$transaction([
-    platformDb.jobApplication.update({ where: { id: applicationId }, data: { status: "HIRED" } }),
-    platformDb.jobRoleLineItem.update({
-      where: { id: app.roleLineItemId },
-      data: { hiredCount: { increment: 1 } },
-    }),
-    platformDb.notification.create({
-      data: {
-        userId: app.workerId,
-        type: "APPLICATION",
-        title: "You've been hired!",
-        body: `${user.name} hired you for "${app.job.title}". Fund the first phase to begin.`,
-      },
-    }),
-  ]);
-
-  redirect(`/dashboard/client/hires/${hire.id}`);
+  await requireRole("CLIENT");
+  redirect(`/dashboard/client/offer/${applicationId}`);
 }
 
 export async function rejectApplicantAction(applicationId: string): Promise<ActionState> {
@@ -164,7 +116,7 @@ export async function rejectApplicantAction(applicationId: string): Promise<Acti
 async function loadOwnedPhase(userId: string, phaseId: string) {
   const phase = await platformDb.phase.findUnique({
     where: { id: phaseId },
-    include: { hire: { include: { client: true, worker: true } } },
+    include: { hire: { include: { client: true, worker: true, contract: true } } },
   });
   if (!phase || phase.hire.clientId !== userId) return null;
   return phase;
@@ -176,6 +128,16 @@ export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
   const phase = await loadOwnedPhase(user.id, phaseId);
   if (!phase) return { error: "Phase not found." };
   if (phase.status !== "PENDING_FUNDING") return { error: "This phase isn't awaiting funding." };
+
+  // SIGNATURE GATE — no escrow moves before both parties have signed the contract.
+  // Deliberately checked before KYC so the user is told the real blocker first.
+  const contract = phase.hire.contract;
+  if (!contract?.clientSignature || !contract?.workerSignature) {
+    const who = !contract?.clientSignature ? "You haven't" : "The worker hasn't";
+    return {
+      error: `${who} signed the contract yet — escrow unlocks once both signatures are recorded.`,
+    };
+  }
 
   // KYC gate — blocks money movement until VERIFIED (redirects to soft-block).
   await assertKycVerified(user, `/dashboard/client/hires/${phase.hireId}`);

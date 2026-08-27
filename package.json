@@ -2,6 +2,9 @@
   "name": "chainwork",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,8 +18,12 @@
     "db:studio:platform": "prisma studio --schema prisma/platform/schema.prisma",
     "db:studio:admin": "prisma studio --schema prisma/admin/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
+    "demo:setup": "prisma migrate deploy --schema prisma/platform/schema.prisma && npm run db:generate && npm i -D playwright && npx playwright install chromium",
+    "demo:capture": "node scripts/demo-capture.mjs",
+    "demo:capture:headed": "node scripts/demo-capture.mjs --headed",
     "db:reset": "prisma migrate reset --schema prisma/platform/schema.prisma --force && prisma migrate reset --schema prisma/admin/schema.prisma --force && npm run db:seed",
-    "postinstall": "npm run db:generate"
+    "postinstall": "npm run db:generate",
+    "db:deploy": "prisma migrate deploy --schema prisma/platform/schema.prisma && prisma migrate deploy --schema prisma/admin/schema.prisma"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

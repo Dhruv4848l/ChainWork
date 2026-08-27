@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Button, Card, StatusBadge } from "@/components/ui";
 import { requireRole } from "@/lib/auth/guards";
 import { getWorkerProfile } from "@/features/worker/queries";
+import { formatInr } from "@/lib/format";
 
 export default async function WorkerProfilePage() {
   const user = await requireRole("WORKER");
@@ -17,6 +18,8 @@ export default async function WorkerProfilePage() {
   ];
   const facts = [
     { k: "Experience", v: `${p.experienceYears} years` },
+    { k: "Charge / hour", v: p.rateHourly ? formatInr(Number(p.rateHourly)) : "—" },
+    { k: "Charge / week", v: p.rateWeekly ? formatInr(Number(p.rateWeekly)) : "—" },
     { k: "Location", v: p.location ?? "—" },
     { k: "Availability", v: p.availability ?? "—" },
     { k: "Languages", v: p.languages.join(", ") || "—" },

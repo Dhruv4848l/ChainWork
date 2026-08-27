@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { getBlogPosts } from "@/features/public/queries";
 
+/*
+  ISR: this page reads the database, so a purely static build would freeze its content
+  at deploy time — posts are published/moderated from the admin console. Re-render at
+  most once a minute instead.
+*/
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Blog — ChainWork" };
 
 export default async function BlogPage() {

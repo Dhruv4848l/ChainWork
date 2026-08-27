@@ -299,3 +299,41 @@ _Last updated: 2026-07-19 (Phase 13)._
   blockers before real money — **professional contract audit first**, then HSM custody + gasless
   relayer, real KYC/SMS/email/on-off-ramp providers, and per-jurisdiction legal/AML review. **The
   golden rule holds: testnet only until these are done.**
+
+## Milestone contracts, digital signatures & the demo walkthrough (2026-08-12)
+
+Closing the last three gaps between what the platform *does* and the story we actually
+demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a panel.
+
+- **The worker now publishes what they charge.** `WorkerProfile.rateHourly` +
+  `rateWeekly` (migration `milestones_and_signatures`), captured at onboarding next to
+  a real experience/bio field, editable in WK-03, and surfaced on WK-02, the rebuilt
+  WK-07 Rates screen, and the CL-05 applicant card beside the rate quoted for that job.
+- **Hiring produces a real payment schedule.** Accepting an applicant used to create a
+  single `Full job` phase behind the client's back. It now opens
+  `/dashboard/client/offer/[applicationId]`, where the client splits the agreed total
+  into 2–8 named, dated phases. The server re-checks that the phases sum exactly to the
+  agreed value before anything is created — an unbalanced plan cannot become a hire.
+- **Both parties digitally sign before any money moves.** One canonical contract
+  document is generated from the hire (`src/features/contracts/contractText.ts`) and
+  SHA-256'd; both sides render it through the *same* component, so they provably cannot
+  be shown different terms. Signing means typing your full legal name, which is checked
+  against the KYC-verified account and recorded with a timestamp, IP and the document
+  hash. **`fundPhaseAction` now refuses to fund escrow until both signatures exist** —
+  and if the terms change afterwards, the recomputed hash stops matching and the app
+  marks the contract void rather than accepting it silently.
+- **`npm run demo:capture`** (`scripts/demo-capture.mjs`) drives the whole story in a
+  real browser and saves 62 numbered screenshots plus `docs/demo-run.json` of the real
+  tx hashes, addresses and balances: signup with OTP + email link on both sides → a
+  ₹1,20,000 Android job → apply → 5-phase plan → mutual signing → fund/deliver/approve
+  per phase → **one phase auto-releasing when the client goes quiet** (local chain
+  fast-forwarded so a two-working-day window plays out in seconds) → reviews →
+  withdrawal. Fresh unique accounts each run, so it's safe to repeat.
+  Made possible by `src/lib/devOutbox.ts`: the mock SMS/email providers mirror messages
+  to a gitignored `.dev-outbox.json`, because OTP codes are bcrypt-hashed in the DB and
+  can't be read back.
+- **[docs/DEMO_WALKTHROUGH.md](docs/DEMO_WALKTHROUGH.md)** narrates that run with an
+  explicit *"in this demo / with real money"* pair at every money step, plus an appendix
+  mapping each simulated piece to its production counterpart and the one env var or
+  function body that swaps it. `python scripts/build-demo-docx.py` re-renders it as a
+  branded `.docx` with the screenshots embedded.
