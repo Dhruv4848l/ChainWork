@@ -108,8 +108,13 @@ export default async function HomePage() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {workers.map((w) => (
             <div key={w.id} className="cw-3d flex flex-col gap-3 rounded-2xl border border-line bg-card p-6">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full border border-line bg-card2 font-display text-lg text-bronze">
-                {w.name.charAt(0)}
+              <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-line bg-card2 font-display text-lg text-bronze">
+                {w.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={w.avatarUrl} alt={w.name} className="h-full w-full object-cover" />
+                ) : (
+                  w.name.charAt(0)
+                )}
               </div>
               <div>
                 <div className="flex items-center gap-2 text-base font-semibold text-ink">

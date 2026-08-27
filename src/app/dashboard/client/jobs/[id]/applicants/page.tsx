@@ -51,8 +51,13 @@ export default async function ApplicantsPage({ params }: { params: Promise<{ id:
                 const decided = a.status !== "APPLIED" && a.status !== "UNDER_REVIEW";
                 return (
                   <Card key={a.id} className="flex flex-wrap items-center gap-4 p-5">
-                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full border border-line bg-card2 text-bronze">
-                      {a.worker.name.charAt(0)}
+                    <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-line bg-card2 text-bronze">
+                      {a.worker.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={a.worker.avatarUrl} alt={a.worker.name} className="h-full w-full object-cover" />
+                      ) : (
+                        a.worker.name.charAt(0)
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2.5">

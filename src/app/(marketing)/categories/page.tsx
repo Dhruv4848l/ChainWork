@@ -45,8 +45,13 @@ export default async function CategoriesPage() {
             <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
               {c.workers.map((w) => (
                 <div key={w.id} className="flex flex-col gap-2.5 rounded-2xl border border-line bg-card p-5">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-line bg-card2 font-display text-bronze">
-                    {w.name.charAt(0)}
+                  <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-line bg-card2 font-display text-bronze">
+                    {w.avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={w.avatarUrl} alt={w.name} className="h-full w-full object-cover" />
+                    ) : (
+                      w.name.charAt(0)
+                    )}
                   </div>
                   <div className="text-[15px] font-semibold text-ink">{w.name}</div>
                   <div className="text-xs text-bronze">★ {w.rating} · {w.jobs} jobs</div>

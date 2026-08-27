@@ -52,6 +52,7 @@ export async function getVerifiedWorkers(limit = 8) {
   return workers.map((w) => ({
     id: w.id,
     name: w.name,
+    avatarUrl: w.avatarUrl,
     trade: w.workerProfile?.skills[0]?.skill.name ?? "Worker",
     rating: w.workerProfile?.ratingAvg?.toFixed(1) ?? "—",
     jobs: w.workerProfile?.completedJobsCount ?? 0,
@@ -97,6 +98,7 @@ export async function getCategoryShowcase() {
         workers: workers.map((w) => ({
           id: w.id,
           name: w.name,
+          avatarUrl: w.avatarUrl,
           rating: w.workerProfile?.ratingAvg?.toFixed(1) ?? "—",
           jobs: w.workerProfile?.completedJobsCount ?? 0,
         })),
