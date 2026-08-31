@@ -92,6 +92,7 @@ async function ensureApproval(account: Account, needed: bigint) {
 
 /** Client funds a phase: mint (mock on-ramp) + approve + fundPhase, signed by the client. */
 export async function fundPhase(phaseId: string, clientUserId: string, workerUserId: string, amountInr: number) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const client = await accountForUser(clientUserId);
   // Pay the worker's payout address — their linked external wallet if they have one,
   // otherwise their custodial wallet (Phase 9).
@@ -109,6 +110,7 @@ export async function fundPhase(phaseId: string, clientUserId: string, workerUse
 
 /** Attestor relays delivery + the off-chain verification deadline (unix seconds). */
 export async function markDelivered(phaseId: string, releaseEligibleAfter: number) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "markDelivered", args: [keyFor(phaseId), BigInt(releaseEligibleAfter)], chain, account: relayer,
@@ -118,6 +120,7 @@ export async function markDelivered(phaseId: string, releaseEligibleAfter: numbe
 
 /** Client approves — the attestor relays it and the contract releases to the worker. */
 export async function approveRelease(phaseId: string) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "approveRelease", args: [keyFor(phaseId)], chain, account: relayer,
@@ -127,6 +130,7 @@ export async function approveRelease(phaseId: string) {
 
 /** Attestor triggers auto-release (contract enforces it can't fire early). */
 export async function autoRelease(phaseId: string) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "autoRelease", args: [keyFor(phaseId)], chain, account: relayer,
@@ -135,6 +139,7 @@ export async function autoRelease(phaseId: string) {
 }
 
 export async function raiseDispute(phaseId: string) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "raiseDispute", args: [keyFor(phaseId)], chain, account: relayer,
@@ -143,6 +148,7 @@ export async function raiseDispute(phaseId: string) {
 }
 
 export async function resolveDispute(phaseId: string, workerBps: number) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "resolveDispute", args: [keyFor(phaseId), BigInt(workerBps)], chain, account: relayer,
@@ -151,6 +157,7 @@ export async function resolveDispute(phaseId: string, workerBps: number) {
 }
 
 export async function refundToClient(phaseId: string) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "refundToClient", args: [keyFor(phaseId)], chain, account: relayer,
@@ -160,6 +167,7 @@ export async function refundToClient(phaseId: string) {
 
 /** Worker locks a refundable delivery stake for a hire (signed by the worker). */
 export async function lockStake(hireId: string, workerUserId: string, clientUserId: string, amountInr: number) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const worker = await accountForUser(workerUserId);
   const client = await accountForUser(clientUserId);
   const amount = toTokenUnits(amountInr);
@@ -173,6 +181,7 @@ export async function lockStake(hireId: string, workerUserId: string, clientUser
 }
 
 export async function forfeitStake(hireId: string) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return `0xmock_${Date.now()}` as `0x${string}`;
   const relayer = relayerAccount();
   const hash = await walletFor(relayer).writeContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "forfeitStake", args: [keyFor(hireId)], chain, account: relayer,
@@ -185,6 +194,15 @@ export async function forfeitStake(hireId: string) {
 const STATUS_NAMES = ["NONE", "FUNDED", "DELIVERED", "RELEASED", "DISPUTED", "RESOLVED", "REFUNDED"] as const;
 
 export async function readEscrow(phaseId: string) {
+  if (process.env.MOCK_BLOCKCHAIN === "true") {
+    return {
+      client: "0x0000000000000000000000000000000000000001",
+      worker: "0x0000000000000000000000000000000000000002",
+      amount: 1000,
+      status: "FUNDED" as const,
+      releaseEligibleAfter: Math.floor(Date.now() / 1000),
+    };
+  }
   const r = (await publicClient.readContract({
     address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "getEscrow", args: [keyFor(phaseId)],
   })) as [string, string, bigint, number, bigint];
@@ -195,5 +213,6 @@ export async function readEscrow(phaseId: string) {
 }
 
 export async function balanceOfInr(address: string): Promise<number> {
+  if (process.env.MOCK_BLOCKCHAIN === "true") return 40000;
   return fromTokenUnits(await balanceOf(address as `0x${string}`));
 }
