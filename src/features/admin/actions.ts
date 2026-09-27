@@ -10,7 +10,6 @@ import { requireAdmin, requireAdminAccess } from "@/lib/admin/guards";
 import { writeAudit } from "@/lib/admin/audit";
 import { rateLimit, rateLimitReset } from "@/lib/rateLimit";
 import * as bridge from "@/lib/admin/bridge";
-import * as chain from "@/lib/chain/escrow";
 import * as jury from "@/lib/admin/jury";
 import { adminDb as adb } from "@/lib/adminDb";
 import type { VerdictChoice } from "@/generated/admin";
@@ -181,18 +180,18 @@ export async function settleDisputeAction(caseId: string): Promise<AdminActionSt
   if (!dispute) return { error: "Case not found." };
   if (dispute.verdictChoice == null) return { error: "No verdict to execute yet." };
 
-  // Map the verdict to a worker basis-points split and execute on-chain.
+  // Map the verdict to a worker basis-points split and execute it through the payment
+  // service (via the bridge — the admin surface never touches the platform DB itself).
   const workerBps = dispute.verdictChoice === "RELEASE_WORKER" ? 10000 : dispute.verdictChoice === "REFUND_CLIENT" ? 0 : (dispute.verdictSplitPct ?? 50) * 100;
-  try {
-    const txHash = await chain.resolveDispute(dispute.subjectPhaseId, workerBps);
-    await adminDb.disputeCase.update({ where: { id: caseId }, data: { status: "EXECUTED" } });
-    await writeAudit({ actorAdminId: admin.id, action: "SETTLEMENT_EXECUTE", targetType: "DisputeCase", targetId: caseId, after: { workerBps, txHash } });
-    revalidatePath("/admin/settlements");
-    return { ok: true, message: `Settled on-chain (${workerBps / 100}% to worker).` };
-  } catch (e) {
-    console.error("settle failed:", e);
-    return { error: "The on-chain settlement failed." };
+  const res = await bridge.bridgeExecuteVerdictSplit(dispute.subjectPhaseId, workerBps);
+  if (!res.ok) {
+    await writeAudit({ actorAdminId: admin.id, action: "SETTLEMENT_FAILED", targetType: "DisputeCase", targetId: caseId, after: { workerBps, paymentId: res.paymentId, code: res.code } });
+    return { error: `The settlement failed: ${res.reason}` };
   }
+  await adminDb.disputeCase.update({ where: { id: caseId }, data: { status: "EXECUTED" } });
+  await writeAudit({ actorAdminId: admin.id, action: "SETTLEMENT_EXECUTE", targetType: "DisputeCase", targetId: caseId, after: { workerBps, txHash: res.txHash, paymentId: res.paymentId } });
+  revalidatePath("/admin/settlements");
+  return { ok: true, message: `Settled (${workerBps / 100}% to worker).` };
 }
 
 // ---------------------------------------------------------------------------

@@ -42,4 +42,15 @@ export interface ChainAdapter {
   mintInr(address: string, amountInr: number): Promise<TxHash>;
   /** Mock fiat off-ramp: move the user's whole custodial balance out. null when 0. */
   withdrawAll(userId: string): Promise<{ txHash: TxHash; amountInr: number } | null>;
+
+  // ---- reconciliation ----
+  /** The mined receipt of `hash`; null if unknown / not mined (always null in demo mode). */
+  txReceipt(hash: TxHash): Promise<TxReceiptView | null>;
+}
+
+export interface TxReceiptView {
+  status: "success" | "reverted";
+  blockNumber: bigint;
+  gasUsed: bigint;
+  effectiveGasPrice: bigint;
 }

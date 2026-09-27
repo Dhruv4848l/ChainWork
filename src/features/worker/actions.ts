@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
 import { requireRole } from "@/lib/auth/guards";
 import * as chain from "@/lib/chain/escrow";
+import { canTransitionPhase, phaseTransition } from "@/lib/escrow/phaseMachine";
+import { classifyPaymentError } from "@/lib/payments/errors";
 import { getPlatformSettings } from "@/lib/config/platformConfig";
 import { addBusinessDays } from "@/lib/calendar/businessDays";
 import { notify } from "@/lib/notify";
@@ -135,7 +137,7 @@ export async function markPhaseDeliveredAction(phaseId: string): Promise<ActionS
     include: { hire: true },
   });
   if (!phase || phase.hire.workerId !== user.id) return { error: "Phase not found." };
-  if (!["FUNDED", "IN_PROGRESS"].includes(phase.status)) {
+  if (!canTransitionPhase("deliver", phase.status)) {
     return { error: "This phase isn't ready to deliver." };
   }
 
@@ -147,22 +149,28 @@ export async function markPhaseDeliveredAction(phaseId: string): Promise<ActionS
     const onchain = await chain.readEscrow(phase.id);
     if (onchain.status === "FUNDED") {
       await chain.markDelivered(phase.id, Math.floor(deadline.getTime() / 1000));
+    } else if (onchain.status !== "DELIVERED") {
+      return { error: "The escrow for this phase isn't active — it can't be marked delivered." };
     }
-    await platformDb.$transaction([
-      platformDb.phase.update({
-        where: { id: phase.id },
+    const t = phaseTransition("deliver", phase.status);
+    const moved = await platformDb.$transaction(async (tx) => {
+      const res = await tx.phase.updateMany({
+        where: { id: phase.id, status: { in: t.from } },
         // reminderCount resets so the verification-window reminders start fresh.
-        data: { status: "VERIFICATION_WINDOW_OPEN", deliveredAt: new Date(), verificationDeadline: deadline, reminderCount: 0 },
-      }),
-      platformDb.notification.create({
+        data: { status: t.to, deliveredAt: new Date(), verificationDeadline: deadline, reminderCount: 0 },
+      });
+      if (res.count !== 1) return false;
+      await tx.notification.create({
         data: { userId: phase.hire.clientId, type: "ESCROW", title: "Phase delivered", body: `"${phase.name}" was delivered — approve or request changes before the window closes.` },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!moved) return { error: "This phase just changed — refresh and try again." };
     revalidatePath(`/dashboard/worker/hires/${phase.hireId}`);
     return { ok: true, message: "Marked delivered — the client's verification window is now open." };
   } catch (e) {
     console.error("markDelivered failed:", e);
-    return { error: "The delivery transaction failed. Please try again." };
+    return { error: classifyPaymentError(e).reason.replace("No money was moved", "Nothing changed") };
   }
 }
 

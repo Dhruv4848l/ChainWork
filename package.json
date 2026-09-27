@@ -23,7 +23,8 @@
     "demo:capture:headed": "node scripts/demo-capture.mjs --headed",
     "db:reset": "prisma migrate reset --schema prisma/platform/schema.prisma --force && prisma migrate reset --schema prisma/admin/schema.prisma --force && npm run db:seed",
     "postinstall": "npm run db:generate",
-    "db:deploy": "prisma migrate deploy --schema prisma/platform/schema.prisma && prisma migrate deploy --schema prisma/admin/schema.prisma"
+    "db:deploy": "prisma migrate deploy --schema prisma/platform/schema.prisma && prisma migrate deploy --schema prisma/admin/schema.prisma",
+    "script": "node --conditions react-server --import tsx"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
@@ -48,6 +49,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^6.19.3",
+    "server-only": "^0.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5"

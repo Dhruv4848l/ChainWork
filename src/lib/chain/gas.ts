@@ -2,6 +2,7 @@ import "server-only";
 import { createPublicClient, createWalletClient, http, parseEther, formatEther } from "viem";
 import { RPC_URL, activeChain } from "./config";
 import { relayerAccount } from "./keystore";
+import { withSignerLock } from "./signerLock";
 
 /*
   GAS SPONSORSHIP for custodial wallets.
@@ -49,11 +50,9 @@ export async function ensureGas(address: `0x${string}`): Promise<void> {
   }
 
   const wc = createWalletClient({ account: relayer, chain, transport: http(RPC_URL) });
-  const hash = await wc.sendTransaction({
-    to: address,
-    value: TOPUP_WEI - balance,
-    chain,
-    account: relayer,
-  });
+  // Relayer sends are serialised with every other relayer transaction (W6).
+  const hash = await withSignerLock(relayer.address, () =>
+    wc.sendTransaction({ to: address, value: TOPUP_WEI - balance, chain, account: relayer }),
+  );
   await publicClient.waitForTransactionReceipt({ hash });
 }

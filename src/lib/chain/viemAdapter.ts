@@ -23,6 +23,8 @@ import { ensureGas } from "./gas";
 import { payoutAddressFor } from "./payout";
 import { ESCROW_STATUS_NAMES } from "./escrowRules";
 import { keyFor } from "./keys";
+import { withSignerLock } from "./signerLock";
+import { currentChainTxObserver } from "@/lib/payments/observer";
 import type { ChainAdapter, EscrowView, TxHash } from "./types";
 
 /*
@@ -51,8 +53,32 @@ export function fromTokenUnits(wei: bigint): number {
   return Number(formatUnits(wei, TOKEN_DECIMALS));
 }
 
-async function waitFor(hash: TxHash) {
-  await publicClient.waitForTransactionReceipt({ hash });
+interface ContractWrite {
+  address: `0x${string}`;
+  abi: readonly unknown[];
+  functionName: string;
+  args: readonly unknown[];
+}
+
+/**
+ * Sign + broadcast one contract call and wait for it to be mined.
+ * - The send is serialised per signing account (./signerLock.ts — W6).
+ * - `primary` marks THE money transaction of the operation (not a gas top-up or an
+ *   approval): it is reported to the payment service as soon as it is broadcast and
+ *   again once mined (src/lib/payments/observer.ts).
+ * - A mined-but-reverted receipt throws, so a failure can never look like success.
+ */
+async function write(account: Account, request: ContractWrite, primary = false): Promise<TxHash> {
+  const hash = await withSignerLock(account.address, () =>
+    walletFor(account).writeContract({ ...request, chain, account } as Parameters<ReturnType<typeof walletFor>["writeContract"]>[0]),
+  );
+  const observer = primary ? currentChainTxObserver() : undefined;
+  if (observer) await observer.onSubmitted(hash);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") {
+    throw new Error(`${request.functionName} transaction ${hash} reverted on-chain`);
+  }
+  observer?.onMined({ hash, blockNumber: receipt.blockNumber, gasUsed: receipt.gasUsed, effectiveGasPrice: receipt.effectiveGasPrice });
   return hash;
 }
 
@@ -61,12 +87,8 @@ async function balanceOf(address: `0x${string}`): Promise<bigint> {
   return publicClient.readContract({ address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [address] });
 }
 
-async function mint(to: `0x${string}`, amount: bigint): Promise<TxHash> {
-  const relayer = relayerAccount();
-  const hash = await walletFor(relayer).writeContract({
-    address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "mint", args: [to, amount], chain, account: relayer,
-  });
-  return waitFor(hash);
+function mint(to: `0x${string}`, amount: bigint, primary = false): Promise<TxHash> {
+  return write(relayerAccount(), { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "mint", args: [to, amount] }, primary);
 }
 
 async function ensureStablecoin(address: `0x${string}`, needed: bigint) {
@@ -83,20 +105,13 @@ async function ensureApproval(account: Account, needed: bigint) {
   })) as bigint;
   if (allowance >= needed) return;
   await ensureGas(account.address); // the approve is signed by the user
-  const hash = await walletFor(account).writeContract({
-    address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "approve", args: [ESCROW_ADDRESS, maxUint256], chain, account,
-  });
-  await waitFor(hash);
+  await write(account, { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "approve", args: [ESCROW_ADDRESS, maxUint256] });
 }
 
 /** A relayer-signed PhaseEscrow call (attestor / dispute-resolver operations). */
-async function relayerCall(functionName: string, args: readonly unknown[]): Promise<TxHash> {
+function relayerCall(functionName: string, args: readonly unknown[]): Promise<TxHash> {
   assertChainWritable();
-  const relayer = relayerAccount();
-  const hash = await walletFor(relayer).writeContract({
-    address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName, args, chain, account: relayer,
-  } as Parameters<ReturnType<typeof walletFor>["writeContract"]>[0]);
-  return waitFor(hash);
+  return write(relayerAccount(), { address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName, args }, true);
 }
 
 export const viemAdapter: ChainAdapter = {
@@ -113,10 +128,7 @@ export const viemAdapter: ChainAdapter = {
     await ensureStablecoin(client.address, amount);
     await ensureApproval(client, amount);
     await ensureGas(client.address); // fundPhase records msg.sender as the client
-    const hash = await walletFor(client).writeContract({
-      address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhase", args: [keyFor(phaseId), workerAddr, amount], chain, account: client,
-    });
-    return waitFor(hash);
+    return write(client, { address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhase", args: [keyFor(phaseId), workerAddr, amount] }, true);
   },
 
   /** Attestor relays delivery + the off-chain verification deadline (unix seconds). */
@@ -148,10 +160,7 @@ export const viemAdapter: ChainAdapter = {
     await ensureStablecoin(worker.address, amount);
     await ensureApproval(worker, amount);
     await ensureGas(worker.address); // the stake is locked by the worker themselves
-    const hash = await walletFor(worker).writeContract({
-      address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "lockStake", args: [keyFor(hireId), client.address, amount], chain, account: worker,
-    });
-    return waitFor(hash);
+    return write(worker, { address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "lockStake", args: [keyFor(hireId), client.address, amount] }, true);
   },
   refundStake: (hireId) => relayerCall("refundStake", [keyFor(hireId)]),
   forfeitStake: (hireId) => relayerCall("forfeitStake", [keyFor(hireId)]),
@@ -162,7 +171,7 @@ export const viemAdapter: ChainAdapter = {
 
   async mintInr(address, amountInr) {
     assertChainWritable();
-    return mint(address as `0x${string}`, toTokenUnits(amountInr));
+    return mint(address as `0x${string}`, toTokenUnits(amountInr), true);
   },
 
   /**
@@ -177,10 +186,16 @@ export const viemAdapter: ChainAdapter = {
     const bal = await balanceOf(account.address);
     if (bal === BigInt(0)) return null;
     await ensureGas(account.address); // the transfer out is signed by the user
-    const txHash = await walletFor(account).writeContract({
-      address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [relayerAccount().address, bal], chain, account,
-    });
-    await waitFor(txHash);
+    const txHash = await write(account, { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [relayerAccount().address, bal] }, true);
     return { txHash, amountInr: fromTokenUnits(bal) };
+  },
+
+  async txReceipt(hash) {
+    try {
+      const r = await publicClient.getTransactionReceipt({ hash });
+      return { status: r.status, blockNumber: r.blockNumber, gasUsed: r.gasUsed, effectiveGasPrice: r.effectiveGasPrice };
+    } catch {
+      return null; // not mined (yet), or unknown to this node
+    }
   },
 };

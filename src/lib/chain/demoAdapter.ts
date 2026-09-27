@@ -302,6 +302,11 @@ export const demoAdapter: ChainAdapter = {
     if (moved === 0) return null;
     return { txHash: demoTxHash(), amountInr: moved / 100 };
   },
+
+  // Demo operations are atomic DB transactions: there is no pending receipt to find.
+  async txReceipt() {
+    return null;
+  },
 };
 
 /** Demo-only: the locked (non-withdrawable) part of an address's balance, in ₹. */

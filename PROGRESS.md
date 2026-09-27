@@ -343,7 +343,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | # | Phase | Status |
 |---|---|---|
 | P0 | Foundations & safety — payment mode, chain adapters, key/role/gas guards, health check, mode banner | ✅ Done (2026-09-28) |
-| P1 | Payment ledger, transaction outbox, state machines, reconciler | ⏳ Next |
+| P1 | Payment ledger, transaction outbox, state machines, reconciler | 🟡 Code complete + service-verified; UI check paused (2026-09-28) |
 | P2 | PDF receipts (success + failed) and statements | — |
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | — |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | — |
@@ -372,3 +372,34 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   refund, withdraw) passes identically on the demo adapter and on the local chain;
   health is green locally and flags all four Amoy problems (public keys, 2× missing role,
   no gas).
+
+**P1 — what changed (paused 2026-09-28, see "Resume here")**
+- **`PaymentTransaction` + `LedgerEntry`** (migrations `payment_ledger`, `phase_reconcile_cursor`).
+  `src/lib/payments/service.ts` `runPayment()` records every attempt BEFORE the chain call
+  (INITIATED → SUBMITTED → CONFIRMED | FAILED | CANCELLED), then applies phase status +
+  ledger rows + the legacy `EscrowTransaction` row in one DB transaction.
+- **All money actions use it:** client fund / approve / no-show refund, cron auto-release +
+  ghosting refund, admin verdict split (via `bridge.bridgeExecuteVerdictSplit`), wallet
+  withdraw / top-up.
+- **State machines:** `src/lib/escrow/phaseMachine.ts` (F4 fixed — request-changes only
+  from DELIVERED / VERIFICATION_WINDOW_OPEN; guarded writes everywhere; new `RESOLVED` phase
+  status), `src/lib/payments/states.ts`, `src/lib/payments/errors.ts` (plain-language reasons).
+- **W6:** per-signer Postgres advisory lock on every send (`src/lib/chain/signerLock.ts`);
+  mined-but-reverted receipts now throw. **F7/W7:** `src/lib/payments/reconcile.ts` runs in
+  every cron tick — finishes stale payments, repairs chain-ahead drift.
+- `GET /api/payments/[id]` (payer/payee only). Backfill:
+  `npm run script -- scripts/backfill-payments.mts` (idempotent). `npm run script` =
+  `node --conditions react-server --import tsx` (added `server-only` dev dep).
+- **Verified:** 42 unit tests; a scripted integration run passed on BOTH adapters (confirm,
+  recorded double-fund failure, crash finished by reconciler, drift repaired, dropped tx
+  failed, concurrent double-fund → exactly one wins, ledger once); cron tick clean.
+
+**Resume here**
+1. Browser check of the real UI path was mid-flow on the LOCAL test hire
+   `cmuk7brx10001iu18a6n21s7a` (Imran K. ↔ Ravi Kumar, 2 phases ₹1,500 + ₹2,500):
+   client has signed; the worker contract page was filled but **Sign was not clicked**.
+   Next: worker signs → client funds phase 1 → worker delivers → client approves → check
+   the PaymentTransaction/LedgerEntry rows and the Payments page.
+2. Then commit P1 as done and start P2 (PDF receipts).
+3. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
+   `phase_reconcile_cursor`), then run the backfill script against Neon.

@@ -581,7 +581,12 @@ Three gaps between the built product and the story we demo were closed here.
   Scripts that import `server-only` modules outside Next need a stub on `NODE_PATH`.
 - **Deploying this to Neon:** apply the `demo_chain` migration (`npm run db:deploy`) BEFORE
   the new code serves traffic, or demo payments fail.
-- Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md`.
+- **Payment ledger (P1):** every money movement MUST go through
+  `src/lib/payments/service.ts` `runPayment()` — never call a chain money op and write the
+  DB by hand. Phase status changes go through `src/lib/escrow/phaseMachine.ts` with
+  guarded `updateMany`. Relayer/custodial sends are serialised by `signerLock.ts`; the cron
+  tick ends with `reconcile()`. Run server scripts with `npm run script -- <file.mts>`.
+- Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)
 

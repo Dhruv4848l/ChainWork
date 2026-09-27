@@ -1,6 +1,11 @@
 import "server-only";
 import { platformDb } from "@/lib/platformDb";
 import { getPendingConfirmations } from "@/lib/escrow/pendingConfirmations";
+import { PHASE_TRANSITIONS } from "@/lib/escrow/phaseMachine";
+import * as chain from "@/lib/chain/escrow";
+import { runPayment } from "@/lib/payments/service";
+import { escrowAddressLabel, refreshBalanceCache } from "@/lib/payments/parties";
+import { maybeCompleteHire } from "@/lib/hires";
 
 /** ADM-09 pending confirmations (the Phase 8 auto-release countdown data). */
 export async function bridgePendingConfirmations() {
@@ -170,7 +175,12 @@ export async function bridgeComplaintForEscalation(complaintId: string) {
 
 /** Freeze the phase in the Platform DB when a dispute opens (mirrors the on-chain freeze). */
 export async function bridgeMarkPhaseDisputed(phaseId: string) {
-  await platformDb.phase.updateMany({ where: { id: phaseId }, data: { status: "DISPUTED" } });
+  // Guarded by the phase state machine: only a live (funded, not yet settled) phase
+  // can be frozen — a released or refunded phase is never flipped back to DISPUTED.
+  await platformDb.phase.updateMany({
+    where: { id: phaseId, status: { in: [...PHASE_TRANSITIONS.dispute.from] } },
+    data: { status: "DISPUTED" },
+  });
 }
 
 // ---- ongoing work (ADM-07) ----
@@ -213,4 +223,33 @@ export async function bridgePhaseSummary(phaseId: string) {
   const p = await platformDb.phase.findUnique({ where: { id: phaseId }, include: { hire: { include: { job: true, worker: true, client: true } } } });
   if (!p) return null;
   return { id: p.id, name: p.name, status: p.status, amount: Number(p.amount), title: p.hire.job.title, worker: p.hire.worker.name, client: p.hire.client.name };
+}
+
+// ---- verdict execution (ADM-08) — a sanctioned money write ----
+/**
+ * Execute a jury verdict split on a disputed phase through the payment service, so
+ * the split is a recorded PaymentTransaction with ledger rows and a receipt like any
+ * other movement. Returns only what the admin screen needs.
+ */
+export async function bridgeExecuteVerdictSplit(phaseId: string, workerBps: number) {
+  const phase = await platformDb.phase.findUnique({ where: { id: phaseId }, include: { hire: true } });
+  if (!phase) return { ok: false as const, paymentId: null, code: "NOT_FOUND", reason: "The disputed phase no longer exists." };
+  const onchain = await chain.readEscrow(phaseId);
+  const res = await runPayment(
+    {
+      kind: "SPLIT", operation: "resolveDispute", signer: "RELAYER", amountInr: onchain.amount || Number(phase.amount),
+      splitWorkerBps: workerBps, payerUserId: phase.hire.clientId, payeeUserId: phase.hire.workerId,
+      fromAddress: escrowAddressLabel(), toAddress: onchain.worker, phaseId, hireId: phase.hireId,
+    },
+    () => chain.resolveDispute(phaseId, workerBps),
+    {
+      afterConfirmed: async () => {
+        await Promise.all([refreshBalanceCache(phase.hire.workerId), refreshBalanceCache(phase.hire.clientId)]);
+        await maybeCompleteHire(phase.hireId);
+      },
+    },
+  );
+  return res.ok
+    ? { ok: true as const, paymentId: res.paymentId, txHash: res.txHash }
+    : { ok: false as const, paymentId: res.paymentId, code: res.code, reason: res.reason };
 }

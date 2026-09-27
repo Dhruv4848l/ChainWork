@@ -1,6 +1,6 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 done (2026-09-28) · P1 in progress**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 done · P1 code complete, UI check paused (2026-09-28) — see PROGRESS.md "Resume here"**_
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:
@@ -285,3 +285,15 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
 | D5 | External services | Reown / WalletConnect `projectId` (free), Alchemy RPC key (free tier), CoinGecko (free tier). You create these accounts; I wire them in. |
 | D6 | Dev environment for the fix work | **Local Postgres + local Hardhat**; Neon + Amoy only for the deployed demo. |
 | D7 | Receipt numbering | Gap-free yearly sequence `CW-RCPT-YYYY-NNNNNN`; failed attempts get numbers too (prefixed `CW-FAIL-…`) so the paid-receipt sequence stays clean. |
+
+---
+
+## Implementation notes (deviations, recorded 2026-09-28)
+- **P1.5:** money actions still run synchronously inside the request, but every attempt is
+  recorded first and its hash is saved at broadcast, so a timed-out request is finished by
+  the reconciler instead of drifting. Fully asynchronous processing with a "processing"
+  UI state moves to P5 (live tracker).
+- **P1.2:** ledger running balances are computed on read (statements, P2), not stored.
+- **Reconciler side effects:** when it finishes a payment it applies the money effects
+  (phase status, ledger, escrow row), but not action-specific extras such as a no-show
+  strike or notifications.

@@ -5,7 +5,10 @@ import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
 import { requireRole, assertKycVerified } from "@/lib/auth/guards";
 import * as chain from "@/lib/chain/escrow";
-import { ESCROW_ADDRESS } from "@/lib/chain/config";
+import { payoutAddressFor } from "@/lib/chain/wallet";
+import { runPayment } from "@/lib/payments/service";
+import { custodialAddressOf, escrowAddressLabel, refreshBalanceCache } from "@/lib/payments/parties";
+import { canTransitionPhase, phaseTransition, PhaseTransitionError, isPhaseSettled } from "@/lib/escrow/phaseMachine";
 import { notify } from "@/lib/notify";
 import { submitReview, type ReviewInput } from "@/lib/reviews";
 import { maybeCompleteHire } from "@/lib/hires";
@@ -16,6 +19,8 @@ export interface ActionState {
   message?: string;
   released?: boolean; // triggers the Forge Complete animation
   txHash?: string;
+  /** The PaymentTransaction recorded for a money action (success or failure). */
+  paymentId?: string;
 }
 
 function str(fd: FormData, key: string) {
@@ -122,12 +127,12 @@ async function loadOwnedPhase(userId: string, phaseId: string) {
   return phase;
 }
 
-/** Fund a phase's escrow on-chain. KYC-gated; enforces sequential funding. */
+/** Fund a phase's escrow. KYC-gated; enforces sequential funding. */
 export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
   const user = await requireRole("CLIENT");
   const phase = await loadOwnedPhase(user.id, phaseId);
   if (!phase) return { error: "Phase not found." };
-  if (phase.status !== "PENDING_FUNDING") return { error: "This phase isn't awaiting funding." };
+  if (!canTransitionPhase("fund", phase.status)) return { error: "This phase isn't awaiting funding." };
 
   // SIGNATURE GATE — no escrow moves before both parties have signed the contract.
   // Deliberately checked before KYC so the user is told the real blocker first.
@@ -142,81 +147,72 @@ export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
   // KYC gate — blocks money movement until VERIFIED (redirects to soft-block).
   await assertKycVerified(user, `/dashboard/client/hires/${phase.hireId}`);
 
-  // Sequential funding: a phase can only be funded once the previous one released.
+  // Sequential funding: a phase can only be funded once the previous one has settled.
   if (phase.index > 1) {
     const prev = await platformDb.phase.findFirst({
       where: { hireId: phase.hireId, index: phase.index - 1 },
     });
-    if (prev && prev.status !== "RELEASED") {
+    if (prev && !isPhaseSettled(prev.status)) {
       return { error: `Fund Phase ${phase.index} unlocks once Phase ${phase.index - 1} closes.` };
     }
   }
 
-  try {
-    const txHash = await chain.fundPhase(
-      phase.id,
-      phase.hire.clientId,
-      phase.hire.workerId,
-      Number(phase.amount)
-    );
-    await platformDb.$transaction([
-      platformDb.phase.update({
-        where: { id: phase.id },
-        data: { status: "FUNDED", onChainEscrowAddress: ESCROW_ADDRESS },
-      }),
-      platformDb.contract.updateMany({
-        where: { hireId: phase.hireId, onChainEscrowAddress: null },
-        data: { onChainEscrowAddress: ESCROW_ADDRESS },
-      }),
-      platformDb.escrowTransaction.create({
-        data: { phaseId: phase.id, type: "FUND", status: "CONFIRMED", amount: phase.amount, onChainTxHash: txHash },
-      }),
-      platformDb.notification.create({
-        data: { userId: phase.hire.workerId, type: "ESCROW", title: "Escrow funded", body: `${user.name} funded "${phase.name}". You can start work.` },
-      }),
-    ]);
-    revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
-    return { ok: true, message: "Escrow funded on-chain — funds are locked.", txHash };
-  } catch (e) {
-    console.error("fundPhase failed:", e);
-    return { error: "The funding transaction failed. Please try again." };
-  }
+  const [from, to] = await Promise.all([custodialAddressOf(phase.hire.clientId), payoutAddressFor(phase.hire.workerId)]);
+  const res = await runPayment(
+    {
+      kind: "FUND", operation: "fundPhase", signer: "CUSTODIAL", amountInr: Number(phase.amount),
+      payerUserId: phase.hire.clientId, payeeUserId: phase.hire.workerId,
+      fromAddress: from, toAddress: to, phaseId: phase.id, hireId: phase.hireId,
+    },
+    () => chain.fundPhase(phase.id, phase.hire.clientId, phase.hire.workerId, Number(phase.amount)),
+    {
+      onConfirmedTx: async (tx) => {
+        await tx.notification.create({
+          data: { userId: phase.hire.workerId, type: "ESCROW", title: "Escrow funded", body: `${user.name} funded "${phase.name}". You can start work.` },
+        });
+      },
+    },
+  );
+  revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
+  revalidatePath("/dashboard/client/payments");
+  if (!res.ok) return { error: res.reason, paymentId: res.paymentId };
+  return { ok: true, message: "Escrow funded — funds are locked.", txHash: res.txHash, paymentId: res.paymentId };
 }
 
-/** Approve a delivered phase → the contract releases the escrow to the worker. */
+/** Approve a delivered phase → the escrow releases to the worker. */
 export async function approvePhaseAction(phaseId: string): Promise<ActionState> {
   const user = await requireRole("CLIENT");
   const phase = await loadOwnedPhase(user.id, phaseId);
   if (!phase) return { error: "Phase not found." };
-  if (phase.status !== "DELIVERED" && phase.status !== "VERIFICATION_WINDOW_OPEN" && phase.status !== "FUNDED") {
-    return { error: "This phase isn't ready to approve." };
-  }
+  if (!canTransitionPhase("approve", phase.status)) return { error: "This phase isn't ready to approve." };
 
-  try {
-    const txHash = await chain.approveRelease(phase.id);
-    const bal = await chain.balanceOfInr((await chain.readEscrow(phase.id)).worker);
-    await platformDb.$transaction([
-      platformDb.phase.update({ where: { id: phase.id }, data: { status: "RELEASED", releasedAt: new Date() } }),
-      platformDb.escrowTransaction.create({
-        data: { phaseId: phase.id, type: "RELEASE", status: "CONFIRMED", amount: phase.amount, onChainTxHash: txHash },
-      }),
-      platformDb.wallet.updateMany({ where: { userId: phase.hire.workerId }, data: { balanceCache: bal } }),
-    ]);
-    await notify({
-      userId: phase.hire.workerId,
-      type: "PAYMENT",
-      title: "Payment released",
-      body: `${phase.name} was approved — funds released to your wallet.`,
-      linkUrl: "/dashboard/worker/earnings",
-    });
-    // If that was the last phase, the hire is complete → opens up reviews.
-    await maybeCompleteHire(phase.hireId);
-    revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
-    return { ok: true, message: "Approved — funds released to the worker.", released: true, txHash };
-  } catch (e) {
-    console.error("approveRelease failed:", e);
-    return { error: "The release transaction failed. Please try again." };
-  }
+  const res = await runPayment(
+    {
+      kind: "RELEASE", operation: "approveRelease", signer: "RELAYER", amountInr: Number(phase.amount),
+      payerUserId: phase.hire.clientId, payeeUserId: phase.hire.workerId,
+      fromAddress: escrowAddressLabel(), toAddress: await payoutAddressFor(phase.hire.workerId),
+      phaseId: phase.id, hireId: phase.hireId,
+    },
+    () => chain.approveRelease(phase.id),
+    {
+      afterConfirmed: async () => {
+        await refreshBalanceCache(phase.hire.workerId);
+        await notify({
+          userId: phase.hire.workerId,
+          type: "PAYMENT",
+          title: "Payment released",
+          body: `${phase.name} was approved — funds released to your wallet.`,
+          linkUrl: "/dashboard/worker/earnings",
+        });
+        // If that was the last phase, the hire is complete → opens up reviews.
+        await maybeCompleteHire(phase.hireId);
+      },
+    },
+  );
+  revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
+  revalidatePath("/dashboard/client/payments");
+  if (!res.ok) return { error: res.reason, paymentId: res.paymentId };
+  return { ok: true, message: "Approved — funds released to the worker.", released: true, txHash: res.txHash, paymentId: res.paymentId };
 }
 
 /** Request changes: resets the verification window and bumps the revision counter. */
@@ -224,18 +220,25 @@ export async function requestChangesAction(phaseId: string): Promise<ActionState
   const user = await requireRole("CLIENT");
   const phase = await loadOwnedPhase(user.id, phaseId);
   if (!phase) return { error: "Phase not found." };
+  // F4: only a delivered phase can go back for changes — never a released, disputed
+  // or unfunded one (that used to desync the DB from the chain).
+  if (!canTransitionPhase("requestChanges", phase.status)) {
+    return { error: new PhaseTransitionError("requestChanges", phase.status).message };
+  }
   if (phase.revisionCount >= 2) {
     return { error: "Revision limit reached — please file a complaint instead of requesting more changes." };
   }
-  await platformDb.phase.update({
-    where: { id: phase.id },
-    data: { status: "IN_PROGRESS", revisionCount: { increment: 1 }, verificationDeadline: null },
+  const t = phaseTransition("requestChanges", phase.status);
+  const res = await platformDb.phase.updateMany({
+    where: { id: phase.id, status: { in: t.from }, revisionCount: phase.revisionCount },
+    data: { status: t.to, revisionCount: { increment: 1 }, verificationDeadline: null },
   });
+  if (res.count !== 1) return { error: "This phase just changed — refresh and try again." };
   revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
   return { ok: true, message: `Changes requested (revision ${phase.revisionCount + 1} of 2). The window resets on redelivery.` };
 }
 
-/** Mark no-show: roll the funded phase's escrow back to the client on-chain. */
+/** Mark no-show: roll the funded phase's escrow back to the client. */
 export async function markNoShowAction(hireId: string): Promise<ActionState> {
   const user = await requireRole("CLIENT");
   const hire = await platformDb.hire.findFirst({
@@ -243,25 +246,30 @@ export async function markNoShowAction(hireId: string): Promise<ActionState> {
     include: { phases: { orderBy: { index: "asc" } }, deliveryStake: true },
   });
   if (!hire) return { error: "Hire not found." };
-  const funded = hire.phases.find((p) => ["FUNDED", "IN_PROGRESS", "DELIVERED"].includes(p.status));
-  if (!funded) return { error: "No funded phase to roll back." };
+  // No-show = the worker never delivered: only a funded, undelivered phase qualifies.
+  const funded = hire.phases.find((p) => p.status === "FUNDED" || p.status === "IN_PROGRESS");
+  if (!funded) return { error: "No funded, undelivered phase to roll back." };
 
-  try {
-    const txHash = await chain.refundToClient(funded.id);
-    await platformDb.$transaction([
-      platformDb.phase.update({ where: { id: funded.id }, data: { status: "AUTO_CANCELLED" } }),
-      platformDb.hire.update({ where: { id: hire.id }, data: { status: "NO_SHOW_FLAGGED" } }),
-      platformDb.escrowTransaction.create({
-        data: { phaseId: funded.id, type: "REFUND", status: "CONFIRMED", amount: funded.amount, onChainTxHash: txHash },
-      }),
-      platformDb.user.update({ where: { id: hire.workerId }, data: { strikes: { increment: 1 } } }),
-    ]);
-    revalidatePath(`/dashboard/client/hires/${hireId}`);
-    return { ok: true, message: "Escrow rolled back to you; a strike was applied to the worker.", txHash };
-  } catch (e) {
-    console.error("markNoShow failed:", e);
-    return { error: "The rollback transaction failed. Please try again." };
-  }
+  const res = await runPayment(
+    {
+      kind: "REFUND", operation: "refundToClient", signer: "RELAYER", amountInr: Number(funded.amount),
+      payerUserId: hire.clientId, payeeUserId: hire.clientId,
+      fromAddress: escrowAddressLabel(), toAddress: await custodialAddressOf(hire.clientId),
+      phaseId: funded.id, hireId: hire.id,
+    },
+    () => chain.refundToClient(funded.id),
+    {
+      onConfirmedTx: async (tx) => {
+        await tx.hire.updateMany({ where: { id: hire.id, status: "ACTIVE" }, data: { status: "NO_SHOW_FLAGGED" } });
+        await tx.user.update({ where: { id: hire.workerId }, data: { strikes: { increment: 1 } } });
+      },
+      afterConfirmed: () => refreshBalanceCache(hire.clientId),
+    },
+  );
+  revalidatePath(`/dashboard/client/hires/${hireId}`);
+  revalidatePath("/dashboard/client/payments");
+  if (!res.ok) return { error: res.reason, paymentId: res.paymentId };
+  return { ok: true, message: "Escrow rolled back to you; a strike was applied to the worker.", txHash: res.txHash, paymentId: res.paymentId };
 }
 
 export async function proposeSettlementAction(hireId: string): Promise<ActionState> {

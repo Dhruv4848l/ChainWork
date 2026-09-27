@@ -87,6 +87,7 @@ enum PhaseStatus {
   RELEASED
   DISPUTED
   AUTO_CANCELLED
+  RESOLVED // closed by a dispute verdict / settlement split (escrow RESOLVED on-chain)
 }
 
 enum EscrowTxType {
@@ -202,6 +203,9 @@ model User {
   complaintsFiled Complaint[]      @relation("ComplaintFiler")
   messages        Message[]
   notifications   Notification[]
+  paymentsMade     PaymentTransaction[] @relation("PaymentPayer")
+  paymentsReceived PaymentTransaction[] @relation("PaymentPayee")
+  ledgerEntries    LedgerEntry[]
 }
 
 model WorkerProfile {
@@ -419,10 +423,13 @@ model Phase {
   reminderCount        Int         @default(0)
   revisionCount        Int         @default(0)
   onChainEscrowAddress String?
+  /// When the reconciler last compared this phase with the chain (payment plan P1.6).
+  lastReconciledAt     DateTime?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
   escrowTransactions EscrowTransaction[]
+  payments           PaymentTransaction[]
 
   @@unique([hireId, index])
 }
@@ -439,6 +446,9 @@ model EscrowTransaction {
   fromAddress  String?
   toAddress    String?
   onChainTxHash String?
+  /// The PaymentTransaction that produced this row (payment plan P1). Null for rows
+  /// written before the payment ledger existed.
+  paymentId    String?
   createdAt    DateTime       @default(now())
 }
 
@@ -616,3 +626,126 @@ model VerificationToken {
 
   @@index([userId, purpose])
 }
+
+// ---------------------------------------------------------------------------
+// Payment ledger (payment plan P1). EVERY money movement — fund, release, refund,
+// split, withdraw, top-up, stake — is one PaymentTransaction, created BEFORE any
+// chain call so that failed and cancelled attempts are recorded too. Only
+// src/lib/payments/service.ts writes these.
+// ---------------------------------------------------------------------------
+
+enum PaymentMode {
+  DEMO
+  TESTNET
+  MAINNET
+}
+
+enum PaymentKind {
+  FUND
+  RELEASE
+  REFUND
+  SPLIT
+  WITHDRAW
+  TOPUP
+  MOVE_TO_EXTERNAL
+  STAKE_LOCK
+  STAKE_REFUND
+  STAKE_FORFEIT
+}
+
+/// INITIATED -> SUBMITTED -> CONFIRMED, or FAILED / CANCELLED / EXPIRED.
+/// (src/lib/payments/states.ts holds the allowed transitions.)
+enum PaymentStatus {
+  INITIATED
+  SUBMITTED
+  CONFIRMED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum SignerKind {
+  CUSTODIAL
+  EXTERNAL_WALLET
+  DEMO_SIGNATURE
+  RELAYER
+}
+
+model PaymentTransaction {
+  id            String        @id @default(cuid())
+  kind          PaymentKind
+  mode          PaymentMode
+  status        PaymentStatus @default(INITIATED)
+  payerUserId   String?
+  payer         User?         @relation("PaymentPayer", fields: [payerUserId], references: [id])
+  payeeUserId   String?
+  payee         User?         @relation("PaymentPayee", fields: [payeeUserId], references: [id])
+  fromAddress   String?
+  toAddress     String?
+  /// Rupee value of the movement (for SPLIT: the whole escrow being split).
+  amountInr     Decimal       @db.Decimal(14, 2)
+  /// SPLIT only: the worker's share in basis points (0..10000).
+  splitWorkerBps Int?
+  assetSymbol   String        @default("cwINR")
+  assetChainId  Int?
+  /// null = the configured stablecoin (or a native coin in PhaseEscrow v2).
+  assetAddress  String?
+  /// Exact base units as a string (wei for 18-decimal tokens).
+  assetAmount   String?
+  quoteId       String?
+  quoteRate     Decimal?      @db.Decimal(24, 8)
+  signer        SignerKind
+  /// The chain operation performed (fundPhase, approveRelease, autoRelease, …).
+  operation     String
+  txHash        String?       @unique
+  blockNumber   BigInt?
+  gasUsed       String?
+  gasFeeWei     String?
+  failureCode   String?
+  failureReason String?
+  /// true when the reconciler (not the original request) finalised this payment.
+  reconciled    Boolean       @default(false)
+  phaseId       String?
+  phase         Phase?        @relation(fields: [phaseId], references: [id])
+  hireId        String?
+  initiatedAt   DateTime      @default(now())
+  submittedAt   DateTime?
+  finalizedAt   DateTime?
+  updatedAt     DateTime      @updatedAt
+
+  ledger LedgerEntry[]
+
+  @@index([payerUserId, initiatedAt])
+  @@index([payeeUserId, initiatedAt])
+  @@index([status, initiatedAt])
+  @@index([phaseId])
+}
+
+enum LedgerBucket {
+  WALLET // the user's spendable wallet balance
+  ESCROW // money the user has locked in escrow
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+/// Double-entry-style movement rows, written in the same DB transaction that marks a
+/// payment CONFIRMED. Running balances are computed on read (statements, P2).
+model LedgerEntry {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id])
+  paymentId String
+  payment   PaymentTransaction @relation(fields: [paymentId], references: [id])
+  bucket    LedgerBucket
+  direction LedgerDirection
+  amountInr Decimal            @db.Decimal(14, 2)
+  memo      String
+  createdAt DateTime           @default(now())
+
+  @@index([userId, createdAt])
+  @@index([paymentId])
+}
+
