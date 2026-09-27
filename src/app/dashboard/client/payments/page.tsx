@@ -8,6 +8,7 @@ import { AddFundsButton } from "@/features/client/AddFundsButton";
 import { FundDueButton } from "@/features/client/FundDueButton";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr } from "@/lib/format";
+import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
 
 export default async function ClientPaymentsPage() {
   const user = await requireRole("CLIENT");
@@ -21,6 +22,7 @@ export default async function ClientPaymentsPage() {
   return (
     <div>
       <PageTitle action={<AddFundsButton />}>Payments &amp; Escrow</PageTitle>
+      <PaymentModeBanner />
 
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
         <StatCard

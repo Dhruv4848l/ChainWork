@@ -1,13 +1,17 @@
 const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
+const { grantRelayerRoles } = require("./lib/roles");
 
 /*
   Deploys the test stablecoin + PhaseEscrow and writes the addresses + ABI location
   to deployments/<network>.json so Phase 7 can wire the app to them.
 
   Local dry run:   npx hardhat run scripts/deploy.js
-  Amoy testnet:    npm run deploy:amoy   (needs contracts/.env — see .env.example)
+  Amoy testnet:    RELAYER_ADDRESS=0x… npm run deploy:amoy   (needs contracts/.env — see .env.example)
+
+  RELAYER_ADDRESS is the app relayer (account CHAIN_RELAYER_INDEX of the app's
+  CHAIN_MNEMONIC); it gets ATTESTOR_ROLE + DISPUTE_ROLE. Defaults to the deployer.
 */
 async function main() {
   const [deployer] = await hre.ethers.getSigners();
@@ -28,10 +32,19 @@ async function main() {
   const escrowAddr = await escrow.getAddress();
   console.log("PhaseEscrow:  ", escrowAddr);
 
+  // The app's relayer signs every attestor/dispute call. If it isn't the deployer
+  // (it shouldn't be off the local node), hand it the roles now — otherwise every
+  // escrow operation after funding reverts.
+  const relayer = process.env.RELAYER_ADDRESS || deployer.address;
+  console.log(`\nRelayer roles for ${relayer}:`);
+  const relayerRoles = await grantRelayerRoles(escrow, relayer);
+
   const out = {
     network: net,
     chainId: Number((await hre.ethers.provider.getNetwork()).chainId),
     deployer: deployer.address,
+    relayer,
+    relayerRoles,
     contracts: { MockStablecoin: tokenAddr, PhaseEscrow: escrowAddr },
     abiPath: "contracts/artifacts/contracts/PhaseEscrow.sol/PhaseEscrow.json",
     deployedAt: new Date().toISOString(),

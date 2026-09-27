@@ -8,6 +8,7 @@ import { ContractRenderer } from "@/features/shared/ContractRenderer";
 import { StubButton } from "@/features/worker/StubButton";
 import { markPhaseDeliveredAction, checkInAction } from "@/features/worker/actions";
 import { formatInr } from "@/lib/format";
+import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
 
 const PHASE_NOTE: Record<string, string> = {
   RELEASED: "Released to your wallet",
@@ -56,6 +57,7 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
       <Link href="/dashboard/worker/hires" className="mb-4 inline-block text-[12.5px] font-semibold uppercase tracking-wider text-bronze hover:underline">
         ← Active hires
       </Link>
+      <PaymentModeBanner />
 
       <div className="mb-4.5 flex items-start justify-between gap-4">
         <div>

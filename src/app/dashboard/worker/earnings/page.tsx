@@ -8,6 +8,7 @@ import { explorerTxBase } from "@/lib/chain/config";
 import { WithdrawButton } from "@/features/worker/WithdrawButton";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr, shortDate, shortHash } from "@/lib/format";
+import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
 
 const TX_STATUS_TONE = { CONFIRMED: "success", PENDING: "warning", FAILED: "danger" } as const;
 
@@ -22,6 +23,7 @@ export default async function EarningsPage() {
   return (
     <div>
       <PageTitle action={<WithdrawButton />}>Earnings &amp; Wallet</PageTitle>
+      <PaymentModeBanner />
 
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
         <StatCard

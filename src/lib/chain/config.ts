@@ -21,6 +21,41 @@ export const TOKEN_DECIMALS = 18;
 
 export const chainConfigured = Boolean(ESCROW_ADDRESS && TOKEN_ADDRESS);
 
+/** Hardhat's well-known default phrase. Every key derived from it is public. */
+const PUBLIC_TEST_MNEMONIC = "test test test test test test test test test test test junk";
+
+export const LOCAL_CHAIN_ID = 31337;
+
+/** True when the custodial/relayer keys come from the public Hardhat phrase. */
+export function usesPublicTestMnemonic(mnemonic: string = MNEMONIC): boolean {
+  return mnemonic.trim().toLowerCase().split(/\s+/).join(" ") === PUBLIC_TEST_MNEMONIC;
+}
+
+export class ChainConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChainConfigError";
+  }
+}
+
+/**
+ * Refuse to SIGN anything on a shared network with public keys. Off the local
+ * Hardhat node, anyone can re-derive those keys and sweep every custodial wallet
+ * (on Amoy the relayer had already been drained). Reads stay allowed.
+ */
+export function assertChainWritable(): void {
+  if (CHAIN_ID !== LOCAL_CHAIN_ID && usesPublicTestMnemonic()) {
+    throw new ChainConfigError(
+      `CHAIN_MNEMONIC is the public Hardhat test phrase, but CHAIN_ID=${CHAIN_ID} is a shared network. ` +
+        "Generate a private mnemonic, fund its relayer account, grant it ATTESTOR_ROLE + DISPUTE_ROLE " +
+        "(contracts/scripts/grant-roles.js), then restart.",
+    );
+  }
+  if (!chainConfigured) {
+    throw new ChainConfigError("CHAIN_ESCROW_ADDRESS / CHAIN_TOKEN_ADDRESS are not set.");
+  }
+}
+
 /** Pick the viem chain object by configured id (local Hardhat or Amoy). */
 export function activeChain() {
   if (CHAIN_ID === polygonAmoy.id) return polygonAmoy;

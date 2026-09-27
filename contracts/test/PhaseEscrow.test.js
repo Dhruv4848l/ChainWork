@@ -334,4 +334,30 @@ describe("PhaseEscrow", () => {
       expect((await escrow.getEscrow(PHASE)).status).to.equal(Status.RELEASED);
     });
   });
+
+  describe("relayer role wiring (deploy / grant-roles scripts)", () => {
+    const { grantRelayerRoles } = require("../scripts/lib/roles");
+    const silent = () => {};
+
+    it("a relayer that is not the deployer can't attest until it is granted the roles", async () => {
+      const { escrow, client, worker, other: relayer } = await loadFixture(deploy);
+      await fund(escrow, client, worker);
+      await expect(escrow.connect(relayer).markDelivered(PHASE, 1)).to.be.reverted;
+
+      const roles = await grantRelayerRoles(escrow, relayer.address, silent);
+      expect(roles).to.deep.equal({ ATTESTOR_ROLE: true, DISPUTE_ROLE: true });
+
+      await escrow.connect(relayer).markDelivered(PHASE, 1);
+      await escrow.connect(relayer).approveRelease(PHASE);
+      expect((await escrow.getEscrow(PHASE)).status).to.equal(Status.RELEASED);
+    });
+
+    it("granting is idempotent and never hands out admin or pauser", async () => {
+      const { escrow, other: relayer } = await loadFixture(deploy);
+      await grantRelayerRoles(escrow, relayer.address, silent);
+      await grantRelayerRoles(escrow, relayer.address, silent);
+      expect(await escrow.hasRole(await escrow.DEFAULT_ADMIN_ROLE(), relayer.address)).to.equal(false);
+      expect(await escrow.hasRole(await escrow.PAUSER_ROLE(), relayer.address)).to.equal(false);
+    });
+  });
 });

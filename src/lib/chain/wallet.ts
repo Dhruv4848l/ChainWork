@@ -1,15 +1,20 @@
 import "server-only";
-import { createPublicClient, createWalletClient, http, formatUnits, parseUnits, isAddress } from "viem";
-import { RPC_URL, TOKEN_ADDRESS, TOKEN_DECIMALS, erc20Abi, activeChain } from "./config";
-import { relayerAccount, accountForUser, provisionWallet } from "./keystore";
-import { ensureGas } from "./gas";
+import { isAddress } from "viem";
+import { provisionWallet } from "./keystore";
+import { adapter } from "./escrow";
+import { demoLockedCreditInr } from "./demoAdapter";
 import { platformDb } from "@/lib/platformDb";
+
+export { payoutAddressFor } from "./payout";
 
 /*
   Wallet layer (Phase 9). Custodial wallets are the default: the platform holds the
   key (dev keystore) and the user only ever sees a rupee balance — no keys, no gas.
   Advanced users can link an external self-custody address; once linked, that becomes
   their payout address.
+
+  Balances, top-ups and withdrawals go through the chain adapter (./escrow.ts), so the
+  same code serves the real chain (testnet/mainnet) and the dummy-money demo mode.
 
   KEY MANAGEMENT — read this. In this build custodial keys are HD accounts derived
   from a dev mnemonic (src/lib/chain/keystore.ts) and gas is pre-funded on the local
@@ -18,40 +23,21 @@ import { platformDb } from "@/lib/platformDb";
   (see the pre-mainnet checklist in Phase 13).
 */
 
-const chain = activeChain();
-const publicClient = createPublicClient({ chain, transport: http(RPC_URL) });
-
-async function balanceWei(address: `0x${string}`): Promise<bigint> {
-  return publicClient.readContract({ address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "balanceOf", args: [address] });
-}
-function toInr(wei: bigint): number {
-  return Number(formatUnits(wei, TOKEN_DECIMALS));
-}
-
-/** The address a user is paid to: their linked external address, else custodial. */
-export async function payoutAddressFor(userId: string): Promise<`0x${string}`> {
-  const wallet = await platformDb.wallet.findUnique({ where: { userId } });
-  if (wallet?.externalAddress && isAddress(wallet.externalAddress)) {
-    return wallet.externalAddress as `0x${string}`;
-  }
-  const { address } = await provisionWallet(userId); // ensures a real custodial address
-  return address;
-}
-
 export interface WalletSummary {
   custodialAddress: `0x${string}`;
   externalAddress: string | null;
   payoutAddress: `0x${string}`;
+  /** Withdrawable balance in ₹ (on-chain in testnet mode; demo balance in demo mode). */
   balanceInr: number;
   /** Showcase-only demo credit: displayed and usable in demos, NEVER withdrawable. */
   demoCreditInr: number;
   currency: string;
-  /** false when the on-chain read failed and balanceInr is the last cached value. */
+  /** false when the balance read failed and balanceInr is the last cached value. */
   live: boolean;
 }
 
 /**
- * Full wallet view: addresses + the on-chain balance of the payout address.
+ * Full wallet view: addresses + the balance of the payout address.
  * Resilient by design: a read-only balance view must never take down the page, so if
  * the RPC is unreachable (e.g. the chain node is down) we fall back to the last cached
  * balance and flag `live: false`. Money MOVEMENTS (withdraw/top-up) still require the
@@ -62,61 +48,50 @@ export async function getWalletSummary(userId: string): Promise<WalletSummary> {
   const wallet = await platformDb.wallet.findUnique({ where: { userId } });
   const external = wallet?.externalAddress ?? null;
   const payout = (external && isAddress(external) ? external : custodial) as `0x${string}`;
+  const base = { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, currency: "INR" };
 
-  const demoCreditInr = wallet ? Number(wallet.demoCredit) : 0;
   try {
-    const balanceInr = toInr(await balanceWei(payout));
+    const chain = adapter();
+    const total = await chain.balanceOfInr(payout);
+    // Demo mode: the demo-credit grant lives INSIDE the demo balance (as lockedCredit),
+    // so report it separately instead of adding Wallet.demoCredit on top. Testnet mode:
+    // demoCredit never exists on-chain and is shown alongside the real balance.
+    const demoCreditInr = chain.kind === "demo" ? await demoLockedCreditInr(payout) : Number(wallet?.demoCredit ?? 0);
+    const balanceInr = chain.kind === "demo" ? total - demoCreditInr : total;
     // keep the cached balance roughly in sync for cheap reads elsewhere
     await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: balanceInr } });
-    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, demoCreditInr, currency: "INR", live: true };
+    return { ...base, balanceInr, demoCreditInr, live: true };
   } catch (e) {
-    console.warn(`getWalletSummary: on-chain read failed, using cached balance — ${(e as Error).message.slice(0, 80)}`);
+    console.warn(`getWalletSummary: balance read failed, using cached balance — ${(e as Error).message.slice(0, 80)}`);
     const balanceInr = wallet ? Number(wallet.balanceCache) : 0;
-    return { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, balanceInr, demoCreditInr, currency: "INR", live: false };
+    return { ...base, balanceInr, demoCreditInr: wallet ? Number(wallet.demoCredit) : 0, live: false };
   }
 }
 
 /**
  * Mocked fiat OFF-RAMP: converts the custodial balance to fiat and pays it to the
- * user's bank/UPI. On testnet there's no real bank, so we move the tokens out of the
- * custodial wallet to the platform relayer (the "off-ramp sink") on-chain and record
- * it — the balance really drops. TODO(production): call a real off-ramp provider here.
+ * user's bank/UPI. On testnet the tokens move from the custodial wallet to the
+ * platform's off-ramp sink on-chain — the balance really drops. TODO(production):
+ * call a real off-ramp provider here.
  *
- * DEMO-CREDIT RULE: this reads the REAL on-chain balance only. The Wallet.demoCredit
- * showcase money never exists on-chain, so it can never leave through here — that's
- * the "non-withdrawable" guarantee, enforced structurally rather than by an if.
+ * DEMO-CREDIT RULE: only the withdrawable balance leaves. In testnet mode demo credit
+ * never exists on-chain; in demo mode it is the locked part of the demo balance, which
+ * the demo adapter never withdraws. Either way it is structurally non-withdrawable.
  */
 export async function withdrawCustodial(userId: string): Promise<{ txHash: `0x${string}`; amountInr: number } | null> {
-  const account = await accountForUser(userId);
-  const bal = await balanceWei(account.address);
-  if (bal === BigInt(0)) return null;
-  await ensureGas(account.address); // the transfer out is signed by the user
-  const wc = createWalletClient({ account, chain, transport: http(RPC_URL) });
-  const txHash = await wc.writeContract({
-    address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer",
-    args: [relayerAccount().address, bal], chain, account,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
-  const amountInr = toInr(bal);
-  await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: 0 } });
-  return { txHash, amountInr };
+  const res = await adapter().withdrawAll(userId);
+  if (res) await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: 0 } });
+  return res;
 }
 
 /**
  * Mocked fiat ON-RAMP: the client pays via UPI/card, the processor converts to
  * stablecoin and credits their custodial wallet. Here the relayer mints test tokens
- * to the custodial address. TODO(production): integrate a real payment processor.
+ * (testnet) or the demo ledger is credited (demo). TODO(production): a real processor.
  */
 export async function topUpCustodial(userId: string, amountInr: number): Promise<`0x${string}`> {
   const { address } = await provisionWallet(userId);
-  const relayer = relayerAccount();
-  const wc = createWalletClient({ account: relayer, chain, transport: http(RPC_URL) });
-  const txHash = await wc.writeContract({
-    address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "mint",
-    args: [address, parseUnits(String(amountInr), TOKEN_DECIMALS)], chain, account: relayer,
-  });
-  await publicClient.waitForTransactionReceipt({ hash: txHash });
-  return txHash;
+  return adapter().mintInr(address, amountInr);
 }
 
 /** Link a verified external (self-custody) address as the payout target. */

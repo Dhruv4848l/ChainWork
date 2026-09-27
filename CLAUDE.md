@@ -558,6 +558,31 @@ Three gaps between the built product and the story we demo were closed here.
   `docs/ChainWork_Demo_Walkthrough.docx` with the screenshots embedded (placeholders
   until the capture has been run).
 
+## Payment modes & chain adapters (payment plan P0)
+
+- **`PAYMENT_MODE`** — `src/lib/payments/mode.ts`: `demo` (dummy money, no chain) | `testnet`
+  | `mainnet` (locked: needs `MAINNET_AUDIT_APPROVED`). `MOCK_BLOCKCHAIN=true` is a legacy
+  alias for demo. Unset → testnet. `src/instrumentation.ts` refuses to start on a
+  dangerous config. Show the mode with `PaymentModeBanner` on every money surface.
+- **Never branch on the mode in callers.** `src/lib/chain/escrow.ts` is the facade;
+  `adapter()` picks `viemAdapter.ts` (real PhaseEscrow) or `demoAdapter.ts` (DB tables
+  `DemoAccount`/`DemoEscrow`). Both enforce `src/lib/chain/escrowRules.ts`, which mirrors
+  every `revert` in `PhaseEscrow.sol` — change both together. Wallet balances/top-up/
+  withdraw (`wallet.ts`) also go through the adapter.
+- **Demo money model:** a custodial address's first demo touch opens it with the
+  `Wallet.demoCredit` grant as `lockedCredit` (spent first, never withdrawable).
+- **Key safety:** `assertChainWritable()` (config.ts) refuses to sign with the public
+  Hardhat phrase off chain 31337. Relayer needs ATTESTOR+DISPUTE roles:
+  `RELAYER_ADDRESS=0x… npx hardhat run scripts/grant-roles.js --network amoy`.
+  `GET /api/health/chain` must be ok before switching production to `testnet`.
+- **Local dev profile:** gitignored `.env.local` (loaded over `.env` by Next) points at
+  local PG18 (`chainwork_platform`/`chainwork_admin`) + the local Hardhat node + mock
+  SMS/email. For Prisma CLI / scripts: `set -a; . ./.env.local; set +a` first.
+  Scripts that import `server-only` modules outside Next need a stub on `NODE_PATH`.
+- **Deploying this to Neon:** apply the `demo_chain` migration (`npm run db:deploy`) BEFORE
+  the new code serves traffic, or demo payments fail.
+- Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md`.
+
 ## Reference files (not in this repo — on the developer's machine)
 
 - Spec v2: `C:\Users\ASUS\Downloads\ChainWork_Complete_Specification_v2.docx` (23 sections;

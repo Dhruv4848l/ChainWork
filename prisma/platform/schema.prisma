@@ -482,6 +482,45 @@ model Wallet {
 }
 
 // ---------------------------------------------------------------------------
+// DEMO payment mode (PAYMENT_MODE=demo) — a DB-backed stand-in for the chain.
+// Mirrors the MockStablecoin balances and the PhaseEscrow escrows/stakes, enforcing
+// the SAME rules (src/lib/chain/escrowRules.ts), so demo money behaves exactly like
+// testnet money. Only src/lib/chain/demoAdapter.ts reads or writes these tables, and
+// never in testnet/mainnet mode. Amounts are rupees (1 cwINR == ₹1).
+// ---------------------------------------------------------------------------
+
+model DemoAccount {
+  /// Lower-case 0x address (custodial or external).
+  address      String   @id
+  /// Total demo balance, INCLUDING lockedCredit.
+  balance      Decimal  @default(0) @db.Decimal(14, 2)
+  /// The part of `balance` that came from the Wallet.demoCredit grant: spendable
+  /// (spent first) but never withdrawable. Earnings received are withdrawable.
+  lockedCredit Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt    DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DemoEscrow {
+  /// keccak256 key of the Phase id (PHASE) or Hire id (STAKE) — same key as on-chain.
+  key                  String   @id
+  /// PHASE | STAKE
+  kind                 String
+  /// The Phase.id or Hire.id this entry mirrors (plain reference).
+  refId                String
+  client               String
+  worker               String
+  amount               Decimal  @db.Decimal(14, 2)
+  /// PHASE: NONE..REFUNDED (escrowRules.EscrowStatus) · STAKE: LOCKED/REFUNDED/FORFEITED
+  status               String
+  releaseEligibleAfter Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([refId])
+}
+
+// ---------------------------------------------------------------------------
 // Reviews, complaints, messaging, notifications
 // ---------------------------------------------------------------------------
 

@@ -9,6 +9,7 @@ import { ClientPhaseControls } from "@/features/client/ClientPhaseControls";
 import { StubButton } from "@/features/shared/StubButton";
 import { markNoShowAction, proposeSettlementAction } from "@/features/client/actions";
 import { formatInr } from "@/lib/format";
+import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
 
 const PHASE_NOTE: Record<string, string> = {
   RELEASED: "Approved & released to the worker",
@@ -62,6 +63,7 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
       <Link href="/dashboard/client/hires" className="mb-4 inline-block text-[12.5px] font-semibold uppercase tracking-wider text-bronze hover:underline">
         ← Active hires
       </Link>
+      <PaymentModeBanner />
 
       <div className="mb-4.5 flex items-start justify-between gap-4">
         <div>

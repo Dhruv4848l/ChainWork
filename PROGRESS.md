@@ -337,3 +337,38 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   mapping each simulated piece to its production counterpart and the one env var or
   function body that swaps it. `python scripts/build-demo-docx.py` re-renders it as a
   branded `.docx` with the screenshots embedded.
+
+## Payment system rework (docs/PAYMENT_SYSTEM_PLAN.md)
+
+| # | Phase | Status |
+|---|---|---|
+| P0 | Foundations & safety — payment mode, chain adapters, key/role/gas guards, health check, mode banner | ✅ Done (2026-09-28) |
+| P1 | Payment ledger, transaction outbox, state machines, reconciler | ⏳ Next |
+| P2 | PDF receipts (success + failed) and statements | — |
+| P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | — |
+| P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | — |
+| P5 | Live wallet tracker + rolling ticker | — |
+| P6 | Multi-crypto payment window (PhaseEscrow v2) | — |
+| P7 | Hardening, E2E tests, "turn off demo money" runbook | — |
+
+**P0 — what changed**
+- **`PAYMENT_MODE`** (`src/lib/payments/mode.ts`) = `demo` | `testnet` | `mainnet`. Legacy
+  `MOCK_BLOCKCHAIN=true` still means demo, so the deployed site behaves as before. Unset →
+  testnet, never mainnet. Mainnet refuses to start without `MAINNET_AUDIT_APPROVED`; a
+  real-value `CHAIN_ID` outside mainnet mode refuses to start (`src/instrumentation.ts`).
+- **Chain adapters.** `src/lib/chain/escrow.ts` is now a facade over `viemAdapter` (the real
+  contract) and `demoAdapter` (dummy money: DB tables `DemoAccount`/`DemoEscrow`, migration
+  `demo_chain`). Both enforce the same rules (`src/lib/chain/escrowRules.ts`). The old
+  mock returned fake hashes and recorded nothing; demo money now really moves between
+  client, escrow and worker, and demo credit stays non-withdrawable (`lockedCredit`).
+  Legacy phases funded under the old mock are adopted automatically.
+- **Key/role/gas safety (W1).** Escrow writes are refused when the public Hardhat phrase is
+  used on a shared network. `contracts/scripts/deploy.js` grants the relayer
+  ATTESTOR+DISPUTE; `contracts/scripts/grant-roles.js` fixes an existing deployment.
+  `GET /api/health/chain` reports mode, keys, RPC, contracts, relayer roles and gas.
+- **Mode banner** on Payments, Earnings and both hire pages.
+- **Verified:** 32 unit tests (+14), 33 contract tests (+2); the same escrow lifecycle
+  (fund → deliver → auto-release, dispute → 60/40 verdict, early auto-release refused,
+  refund, withdraw) passes identically on the demo adapter and on the local chain;
+  health is green locally and flags all four Amoy problems (public keys, 2× missing role,
+  no gas).
