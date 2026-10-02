@@ -19,14 +19,16 @@
     "db:studio:platform": "prisma studio --schema prisma/platform/schema.prisma",
     "db:studio:admin": "prisma studio --schema prisma/admin/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
-    "demo:setup": "prisma migrate deploy --schema prisma/platform/schema.prisma && npm run db:generate && npm i -D playwright && npx playwright install chromium",
+    "demo:setup": "prisma migrate deploy --schema prisma/platform/schema.prisma && npm run db:generate && npx playwright install chromium",
     "demo:capture": "node scripts/demo-capture.mjs",
     "demo:capture:headed": "node scripts/demo-capture.mjs --headed",
     "db:reset": "prisma migrate reset --schema prisma/platform/schema.prisma --force && prisma migrate reset --schema prisma/admin/schema.prisma --force && npm run db:seed",
     "postinstall": "npm run db:generate",
     "db:deploy": "prisma migrate deploy --schema prisma/platform/schema.prisma && prisma migrate deploy --schema prisma/admin/schema.prisma",
     "script": "node --conditions react-server --import tsx",
-    "test:integration": "node --conditions react-server --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx --test --test-concurrency=1 \"tests/integration/*.int.test.mts\""
+    "test:integration": "node --conditions react-server --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx --test --test-concurrency=1 \"tests/integration/*.int.test.mts\"",
+    "test:e2e": "npm run build && playwright test",
+    "test:e2e:nobuild": "playwright test"
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",
@@ -51,6 +53,7 @@
     "wagmi": "^3.7.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",

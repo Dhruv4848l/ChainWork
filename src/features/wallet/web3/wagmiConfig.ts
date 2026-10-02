@@ -1,5 +1,5 @@
 import { defineChain, type Chain } from "viem";
-import { cookieStorage, createConfig, createStorage, http, injected } from "wagmi";
+import { cookieStorage, createConfig, createStorage, http, injected, type CreateConnectorFn } from "wagmi";
 import { walletConnect } from "wagmi/connectors/walletConnect";
 import type { PublicChainInfo } from "@/lib/chain/publicChain";
 
@@ -25,6 +25,18 @@ export function chainFromInfo(info: PublicChainInfo): Chain {
   });
 }
 
+/**
+ * WalletConnect's setup() opens its relay connection. wagmi runs connector setup when a
+ * config is created — on the server too, once per request (each server render gets its
+ * own config), which leaked a relay client + listeners per request (found in P7). The
+ * connector stays in the list, so server and client render the same picker; it just
+ * doesn't set itself up off the browser.
+ */
+function browserOnlySetup(fn: CreateConnectorFn): CreateConnectorFn {
+  if (typeof window !== "undefined") return fn;
+  return (config) => ({ ...fn(config), setup: undefined });
+}
+
 export function makeWagmiConfig(info: PublicChainInfo) {
   const chain = chainFromInfo(info);
   return createConfig({
@@ -37,7 +49,7 @@ export function makeWagmiConfig(info: PublicChainInfo) {
       injected({ shimDisconnect: true }),
       ...(info.walletConnectProjectId
         ? [
-            walletConnect({
+            browserOnlySetup(walletConnect({
               projectId: info.walletConnectProjectId,
               showQrModal: true,
               metadata: {
@@ -46,7 +58,7 @@ export function makeWagmiConfig(info: PublicChainInfo) {
                 url: info.appUrl,
                 icons: [`${info.appUrl}/icon.png`],
               },
-            }),
+            })),
           ]
         : []),
     ],
