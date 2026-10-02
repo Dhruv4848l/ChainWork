@@ -4,38 +4,72 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "web-webpack",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:webpack"],
+      "runtimeArgs": [
+        "run",
+        "dev:webpack"
+      ],
       "port": 3000
     },
     {
       "name": "web-prod",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "start", "-p", "3100"],
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3100"
+      ],
       "port": 3100
+    },
+    {
+      "name": "demo-serve",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "demo:serve"
+      ],
+      "port": 3000
     },
     {
       "name": "chain",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "contracts", "run", "node"],
+      "runtimeArgs": [
+        "--prefix",
+        "contracts",
+        "run",
+        "node"
+      ],
       "port": 8545
     },
     {
       "name": "db-studio-platform",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "db:studio:platform"],
+      "runtimeArgs": [
+        "run",
+        "db:studio:platform"
+      ],
       "port": 5555
     },
     {
       "name": "db-studio-admin",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "db:studio:admin", "--", "--port", "5556"],
+      "runtimeArgs": [
+        "run",
+        "db:studio:admin",
+        "--",
+        "--port",
+        "5556"
+      ],
       "port": 5556
     }
   ]

@@ -27,11 +27,19 @@ export function OtpForm({ phoneHint }: { phoneHint: string }) {
   }, [resendIn]);
 
   function setDigit(i: number, v: string) {
-    const clean = v.replace(/\D/g, "").slice(-1);
-    const next = [...digits];
-    next[i] = clean;
-    setDigits(next);
-    if (clean && i < 5) refs.current[i + 1]?.focus();
+    const typed = v.replace(/\D/g, "");
+    // Typing over a filled box replaces its digit. Several digits at once = a paste or the
+    // phone's SMS one-time-code autofill: spread them from this box on. Functional update
+    // so fast input never overwrites itself.
+    const overtype = typed.length === 2 && typed[0] === digits[i];
+    const chars = typed.length > 1 && !overtype ? typed.slice(0, 6 - i).split("") : [typed.slice(-1)];
+    setDigits((prev) => {
+      const next = [...prev];
+      chars.forEach((c, k) => (next[i + k] = c));
+      return next;
+    });
+    const last = i + chars.length - 1;
+    if (chars[0] && last < 5) refs.current[last + 1]?.focus();
   }
 
   function onKeyDown(i: number, e: React.KeyboardEvent<HTMLInputElement>) {
@@ -65,7 +73,8 @@ export function OtpForm({ phoneHint }: { phoneHint: string }) {
                 refs.current[i] = el;
               }}
               inputMode="numeric"
-              maxLength={1}
+              autoComplete={i === 0 ? "one-time-code" : "off"}
+              aria-label={`Digit ${i + 1} of 6`}
               value={d}
               onChange={(e) => setDigit(i, e.target.value)}
               onKeyDown={(e) => onKeyDown(i, e)}

@@ -1,0 +1,119 @@
+{
+  "runId": "2999952",
+  "capturedAt": "2026-10-02T20:29:59.953Z",
+  "worker": {
+    "custodialAddress": "0x924Ba5Ce9f91ddED37b4ebf8c0dc82A40202fc0A",
+    "name": "Aditya Raghavan",
+    "email": "aditya.raghavan.2999952@demo.chainwork.dev",
+    "phone": "9829999520",
+    "password": "ChainWork!2026"
+  },
+  "client": {
+    "name": "Meridian Retail Labs",
+    "email": "ops.meridian.2999952@demo.chainwork.dev",
+    "phone": "9729999521",
+    "password": "ChainWork!2026"
+  },
+  "phases": [
+    {
+      "index": 1,
+      "name": "Requirements, Figma handoff & project scaffold",
+      "amount": 15000,
+      "id": "cmurf3tdy00csfmkkjpnibye9"
+    },
+    {
+      "index": 2,
+      "name": "Catalogue browse, product detail & cart screens",
+      "amount": 25000,
+      "id": "cmurf3tdy00ctfmkkld99o66m"
+    },
+    {
+      "index": 3,
+      "name": "REST API integration, Room offline cart & FCM",
+      "amount": 30000,
+      "id": "cmurf3tdy00cufmkk8uvvr168"
+    },
+    {
+      "index": 4,
+      "name": "Razorpay checkout, order tracking & polish",
+      "amount": 30000,
+      "id": "cmurf3tdy00cvfmkkidfw3rnp"
+    },
+    {
+      "index": 5,
+      "name": "QA, Play Store internal release & handover",
+      "amount": 20000,
+      "id": "cmurf3tdy00cwfmkkl1jyoajg"
+    }
+  ],
+  "chain": {},
+  "contractHash": "5fa227d6ed3f83775a2baa504ddbefde93f6482ec1ad3b3ff0543dc31588c061",
+  "contractRef": "CW-KKSM78BTJ5",
+  "transactions": [
+    {
+      "phase": "Requirements, Figma handoff & project scaffold",
+      "type": "FUND",
+      "amount": 15000,
+      "txHash": "0xf4181755eecbecd1d0bd1c5730e093eea8b7f98df25b713c1934196798f315b7"
+    },
+    {
+      "phase": "Requirements, Figma handoff & project scaffold",
+      "type": "RELEASE",
+      "amount": 15000,
+      "txHash": "0x68fbdb4dfbdfd7084c63d84d5cefc6efc7f57f63d005023026a7de0cba949737"
+    },
+    {
+      "phase": "Catalogue browse, product detail & cart screens",
+      "type": "FUND",
+      "amount": 25000,
+      "txHash": "0xd382b48ce24cabe38fc284443b0942d3d5a89a00e981428d8ee9933eb7a0632f"
+    },
+    {
+      "phase": "Catalogue browse, product detail & cart screens",
+      "type": "RELEASE",
+      "amount": 25000,
+      "txHash": "0x67c6f7eed3034c1e51c4772dbb60eeeb33c3b5d9a81c46e3e6957cc7bb16088d"
+    },
+    {
+      "phase": "REST API integration, Room offline cart & FCM",
+      "type": "FUND",
+      "amount": 30000,
+      "txHash": "0xf6cb65f995f3caf6cfacfa9b47abb38d3749266b6a6edcc446a0dee9a5ac4b1a"
+    },
+    {
+      "phase": "REST API integration, Room offline cart & FCM",
+      "type": "RELEASE",
+      "amount": 30000,
+      "txHash": "0x8db15823a31f289409697faab66e80429032c10d98b5ae0920058bdd76a99a3b"
+    },
+    {
+      "phase": "Razorpay checkout, order tracking & polish",
+      "type": "FUND",
+      "amount": 30000,
+      "txHash": "0x0aa35f7316590fdaaa0ad7c9a3c21074276153cbd5f1f06f11d9a75be53b5e7e"
+    },
+    {
+      "phase": "Razorpay checkout, order tracking & polish",
+      "type": "RELEASE",
+      "amount": 30000,
+      "txHash": "0x3a0b4d30bd2158a97002f845e3fa1c23ee1653ae0c1d031989689128235ee803"
+    },
+    {
+      "phase": "QA, Play Store internal release & handover",
+      "type": "FUND",
+      "amount": 20000,
+      "txHash": "0x6b41d28a07d238d29429e0535815daab6acd8f1af5b05ac025af9b6f061ee76c"
+    },
+    {
+      "phase": "QA, Play Store internal release & handover",
+      "type": "RELEASE",
+      "amount": 20000,
+      "txHash": "0x3a7daee8f3a0ab41a5c041f581bc0d6ba7527f39d9f0530fc33c6ee9ce7171cc"
+    }
+  ],
+  "hireId": "cmurf3tdy00cqfmkksm78btj5",
+  "job": {
+    "title": "Android app — Meridian Retail customer ordering app (Kotlin)",
+    "total": 120000
+  }
+}

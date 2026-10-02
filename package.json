@@ -28,7 +28,8 @@
     "script": "node --conditions react-server --import tsx",
     "test:integration": "node --conditions react-server --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx --test --test-concurrency=1 \"tests/integration/*.int.test.mts\"",
     "test:e2e": "npm run build && playwright test",
-    "test:e2e:nobuild": "playwright test"
+    "test:e2e:nobuild": "playwright test",
+    "demo:serve": "node scripts/serve-capture.mjs"
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",

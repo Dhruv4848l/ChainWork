@@ -17,10 +17,11 @@
  *   1. Postgres running, and migrations applied:  npm run db:generate && npx prisma migrate deploy --schema prisma/platform/schema.prisma
  *   2. Local chain:      cd contracts && npx hardhat node
  *   3. Contracts:        cd contracts && npx hardhat run scripts/deploy.js --network localhost
- *   4. The app:          npm run dev
+ *   4. The app:          npm run build && npm run demo:serve   (production build + dev outbox;
+ *                        `npm run dev` also works but its on-the-fly compiles can drop requests)
  *
  * ONE-TIME SETUP:
- *   npm i -D playwright && npx playwright install chromium
+ *   npx playwright install chromium    (or set PW_CHROMIUM to an installed chrome.exe)
  *
  * RUN:
  *   npm run demo:capture           # headless
@@ -169,6 +170,79 @@ const facts = { runId: RUN, capturedAt: new Date().toISOString(), worker: {}, cl
 // ---------------------------------------------------------------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Sign the contract on this page with the account name the form asks for (business
+ * clients sign as the company — the server rejects any other name), then make sure it took.
+ */
+async function signContract(page) {
+  await page.getByRole("checkbox").check();
+  const input = page.getByLabel("Type your full name to sign");
+  const placeholder = (await input.getAttribute("placeholder")) ?? "";
+  const name = placeholder.match(/"(.+)"/)?.[1];
+  if (!name) throw new Error(`Can't read the signing name from "${placeholder}"`);
+  await input.fill(name);
+  return name;
+}
+
+async function submitSignature(page) {
+  await page.getByRole("button", { name: "Sign contract" }).click();
+  await page.getByRole("button", { name: "Sign contract" }).waitFor({ state: "detached", timeout: 60000 }).catch(async () => {
+    const err = await page.locator('[role="alert"], .text-ember').first().textContent().catch(() => "");
+    throw new Error(`Signature not accepted: ${err || "the form is still there"}`);
+  });
+}
+
+/**
+ * Navigate and wait for React to hydrate. On the webpack dev server hydration can lag the
+ * load event by seconds; typing before it lands gets wiped (controlled inputs reset).
+ */
+async function go(page, url) {
+  // A client-side redirect still finishing on the previous page aborts the navigation
+  // (net::ERR_ABORTED) — let it land, then go again.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.goto(url);
+      break;
+    } catch (e) {
+      if (attempt >= 3 || !/ERR_ABORTED|interrupted/.test(e.message)) throw e;
+      await page.waitForTimeout(1500);
+    }
+  }
+  await settle(page);
+}
+
+/** Wait until the current page is hydrated (after a goto, a redirect or a reload). */
+async function settle(page) {
+  await page.waitForFunction(() => {
+    const el = document.querySelector("main button, main a, form button, h1");
+    return !!el && Object.keys(el).some((k) => k.startsWith("__reactFiber"));
+  }, null, { timeout: 120000 });
+}
+
+/**
+ * Fund the next phase the way a client does since payment plan P6: "Fund Phase" opens the
+ * payment window; pay in cwINR from the ChainWork wallet and wait for the receipt.
+ */
+async function fundNextPhase(page) {
+  await page.getByRole("button", { name: /^Fund Phase/ }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Fund this phase" });
+  const pay = dialog.getByRole("button", { name: /from ChainWork wallet$/ });
+  await pay.waitFor({ timeout: 60000 });
+  // Funding only spends what's really in the wallet (P3.1): a shortfall is topped up in
+  // the window, prefilled with the exact amount missing.
+  if (await pay.isDisabled()) {
+    await dialog.getByRole("button", { name: "Add funds" }).click();
+    await page.waitForFunction(
+      () => [...document.querySelectorAll('[role="dialog"] button')].some((b) => /from ChainWork wallet$/.test(b.textContent ?? "") && !b.disabled),
+      null,
+      { timeout: 60000 },
+    );
+  }
+  await pay.click();
+  await dialog.getByText("Escrow funded").waitFor({ timeout: 120000 });
+  await dialog.getByRole("button", { name: "Done" }).click();
+}
+
 function readOutbox() {
   try {
     return JSON.parse(fs.readFileSync(OUTBOX, "utf8"));
@@ -231,8 +305,21 @@ async function runCronTick() {
 /** Type a 6-digit OTP into the six single-character boxes. */
 async function fillOtp(page, code) {
   const boxes = page.locator('input[inputmode="numeric"]');
-  await boxes.first().waitFor();
-  for (let i = 0; i < 6; i++) await boxes.nth(i).fill(code[i]);
+  // The boxes must be live React inputs, and stay that way: on the dev server the page can
+  // arrive twice (redirect + a second render) and replace a form that was already typed
+  // into. Type, confirm Verify enabled, otherwise wait for the live form and type again.
+  for (let attempt = 1; ; attempt++) {
+    await boxes.first().waitFor();
+    await page.waitForFunction(() => {
+      const el = document.querySelector('input[inputmode="numeric"]');
+      const props = el && Object.keys(el).find((k) => k.startsWith("__reactProps"));
+      return !!props && typeof el[props].onChange === "function";
+    }, null, { timeout: 120000 });
+    for (let i = 0; i < 6; i++) await boxes.nth(i).fill(code[i]);
+    const ok = await page.getByRole("button", { name: "Verify" }).isEnabled({ timeout: 5000 }).catch(() => false);
+    if (ok || attempt >= 4) return;
+    await page.waitForTimeout(2000);
+  }
 }
 
 async function step(label, fn) {
@@ -251,7 +338,7 @@ async function step(label, fn) {
 async function signUp(page, who, role, shots) {
   const t0 = Date.now();
 
-  await page.goto(`${BASE}/signup`);
+  await go(page, `${BASE}/signup`);
   await page.getByRole("button", { name: role === "WORKER" ? "Find Work" : "Post a Job" }).click();
   if (shots.blank) await shot(page, shots.blank.slug, shots.blank.title, shots.blank.caption);
 
@@ -261,7 +348,7 @@ async function signUp(page, who, role, shots) {
   await page.getByPlaceholder("Password (min 8 characters)").fill(who.password);
 
   if (role === "CLIENT") {
-    await page.getByRole("button", { name: "Business" }).click();
+    await page.getByRole("button", { name: "Business", exact: true }).click();
     await page.getByPlaceholder("Company name").fill(who.companyName);
     await page.getByPlaceholder("Business registration number").fill(who.regNumber);
   }
@@ -269,7 +356,8 @@ async function signUp(page, who, role, shots) {
   if (shots.filled) await shot(page, shots.filled.slug, shots.filled.title, shots.filled.caption);
 
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.waitForURL("**/verify/phone", { timeout: 20000 });
+  await page.waitForURL("**/verify/phone", { timeout: 90000 });
+  await settle(page);
 
   // ---- phone OTP ----
   const sms = await waitForMessage("sms", who.phone, t0);
@@ -279,22 +367,28 @@ async function signUp(page, who, role, shots) {
   await fillOtp(page, sms.code);
   if (shots.otpFilled) await shot(page, shots.otpFilled.slug, shots.otpFilled.title, shots.otpFilled.caption);
   await page.getByRole("button", { name: "Verify" }).click();
-  await page.waitForURL("**/verify/email", { timeout: 20000 });
+  await page.waitForURL("**/verify/email", { timeout: 90000 });
+  await settle(page);
   if (shots.emailWait) await shot(page, shots.emailWait.slug, shots.emailWait.title, shots.emailWait.caption);
 
   // ---- email verification link (opened in a second tab, like a real inbox) ----
   const mail = await waitForMessage("email", who.email, t0);
   console.log(`  ✉ mock email link ${mail.link}`);
   const inbox = await page.context().newPage();
-  await inbox.goto(mail.link);
+  await inbox.goto(mail.link); // screenshot only — no interaction, no hydration wait
   if (shots.emailConfirmed) {
     await shot(inbox, shots.emailConfirmed.slug, shots.emailConfirmed.title, shots.emailConfirmed.caption);
   }
   await inbox.close();
 
-  // The waiting card polls and advances itself once the address is confirmed.
-  await page.reload();
-  await page.waitForURL(`**/onboarding/${role.toLowerCase()}`, { timeout: 25000 });
+  // The waiting card polls and advances itself once the address is confirmed; reload only
+  // if it hasn't moved on (a reload racing its own redirect gets aborted).
+  const onboarding = `**/onboarding/${role.toLowerCase()}`;
+  await page.waitForURL(onboarding, { timeout: 90000 }).catch(async () => {
+    await page.reload().catch(() => {});
+    await page.waitForURL(onboarding, { timeout: 90000 });
+  });
+  await settle(page);
   return { otp: sms.code, link: mail.link };
 }
 
@@ -305,6 +399,8 @@ async function main() {
   const browser = await chromium.launch({
     headless: !HEADED,
     slowMo: HEADED ? 120 : 0,
+    // Reuse an installed Chromium (same switch as the E2E suite) instead of downloading one.
+    ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
   });
   const ctxOpts = { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 };
   const workerCtx = await browser.newContext(ctxOpts);
@@ -314,7 +410,7 @@ async function main() {
 
   // =========================================================================
   await step("00 — the public landing page", async () => {
-    await w.goto(BASE);
+    await go(w, BASE);
     await w.waitForTimeout(2500); // let the 3D hero settle
     await shot(w, "landing", "The public site", "Where both sides arrive. One product, two doors: Find Work and Post a Job.", { fullPage: false });
   });
@@ -343,11 +439,13 @@ async function main() {
     await shot(w, "worker-profile-setup", "Worker profile — experience and charges", "This is the step your brief calls out: the worker publishes what they've done and what they charge, per hour and per week. Both numbers are reference rates — the binding figure is the one agreed on the job.");
 
     await w.getByRole("button", { name: /Finish/ }).click();
-    await w.waitForURL("**/kyc**", { timeout: 20000 });
+    await w.waitForURL("**/kyc**", { timeout: 90000 });
+    await settle(w);
     await shot(w, "worker-kyc", "Identity verification (KYC)", "Tier ladder: Unverified → Basic → Verified → Trusted. Nothing touching money is reachable below Verified. The documents are mocked here and auto-approve; a real KYC/AML provider drops into the same call.");
 
     await w.getByRole("button", { name: "Submit for Review" }).click();
-    await w.waitForURL((u) => !u.pathname.startsWith("/kyc"), { timeout: 20000 });
+    await w.waitForURL((u) => !u.pathname.startsWith("/kyc"), { timeout: 90000 });
+    await settle(w);
     await shot(w, "worker-dashboard", "Worker dashboard", "The worker is live: verified phone, verified email, Verified KYC tier, a published profile and published charges.");
   });
 
@@ -367,17 +465,19 @@ async function main() {
     await shot(c, "client-profile-setup", "Client profile setup", "Address is stored but never shown publicly — jobs only ever advertise an area.");
 
     await c.getByRole("button", { name: /Finish/ }).click();
-    await c.waitForURL("**/dashboard/client", { timeout: 20000 });
+    await c.waitForURL("**/dashboard/client", { timeout: 90000 });
+    await settle(c);
 
-    await c.goto(`${BASE}/kyc`);
+    await go(c, `${BASE}/kyc`);
     await c.getByRole("button", { name: "Submit for Review" }).click();
-    await c.waitForURL((u) => !u.pathname.startsWith("/kyc"), { timeout: 20000 });
+    await c.waitForURL((u) => !u.pathname.startsWith("/kyc"), { timeout: 90000 });
+    await settle(c);
     await shot(c, "client-kyc-done", "Client verified", "The client also has to clear KYC — funding escrow is gated on it, and the gate is checked server-side in fundPhaseAction, not just hidden in the UI.");
   });
 
   // =========================================================================
   await step("03 — client posts the Android job", async () => {
-    await c.goto(`${BASE}/dashboard/client/post-job`);
+    await go(c, `${BASE}/dashboard/client/post-job`);
     await c.getByPlaceholder("Job title").fill(JOB.title);
     await c.getByPlaceholder("Describe the work").fill(JOB.description);
     await c.locator("select").first().selectOption({ label: JOB.category });
@@ -408,17 +508,19 @@ async function main() {
     await shot(c, "post-job-5-review", "Post a job — step 5, review", "Everything the worker will see, before it goes live.");
 
     await c.getByRole("button", { name: "Publish Job" }).click();
-    await c.waitForURL("**/dashboard/client/jobs", { timeout: 20000 });
+    await c.waitForURL("**/dashboard/client/jobs", { timeout: 90000 });
+    await settle(c);
     await shot(c, "client-jobs-list", "The job is live", "Published. It is now visible in every worker's Find Jobs, filtered by skill and area.");
   });
 
   // =========================================================================
   const ids = await step("04 — worker finds and applies", async () => {
-    await w.goto(`${BASE}/dashboard/worker/find-jobs`);
+    await go(w, `${BASE}/dashboard/worker/find-jobs`);
     await shot(w, "worker-find-jobs", "Find Jobs", "The client's post, seconds old, in the worker's feed.");
 
     await w.getByRole("link", { name: new RegExp(JOB.title.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) }).first().click();
-    await w.waitForURL("**/dashboard/worker/jobs/**", { timeout: 20000 });
+    await w.waitForURL("**/dashboard/worker/jobs/**", { timeout: 90000 });
+    await settle(w);
     await shot(w, "worker-job-detail", "The job as the worker reads it", "Full spec, the per-person rate, open slots, and the client's verification badge. Trust is symmetrical — the worker is checking the client out too.");
 
     await w.getByRole("button", { name: "Apply Now" }).click();
@@ -429,7 +531,8 @@ async function main() {
     await shot(w, "worker-apply", "Applying", "Cover note plus a rate. The rate pre-fills from the posting and is negotiable — what the worker types here becomes the contract total if they're hired.");
 
     await w.getByRole("button", { name: "Submit Application" }).click();
-    await w.waitForURL("**/dashboard/worker/applications", { timeout: 20000 });
+    await w.waitForURL("**/dashboard/worker/applications", { timeout: 90000 });
+    await settle(w);
     await shot(w, "worker-applications", "Application submitted", "Tracked on the worker's side from the moment it's sent.");
 
     const job = await db.job.findFirst({ where: { title: JOB.title }, orderBy: { createdAt: "desc" } });
@@ -439,11 +542,12 @@ async function main() {
 
   // =========================================================================
   const hireId = await step("05 — client reviews the applicant and builds the 5-phase plan", async () => {
-    await c.goto(`${BASE}/dashboard/client/jobs/${ids.jobId}/applicants`);
+    await go(c, `${BASE}/dashboard/client/jobs/${ids.jobId}/applicants`);
     await shot(c, "client-applicants", "The applicant, as the client sees them", "Rating, jobs completed, years of experience, and the charges the worker published at signup — hourly and weekly — next to what they've quoted for this specific job.");
 
     await c.getByRole("link", { name: /Accept/ }).first().click();
-    await c.waitForURL("**/dashboard/client/offer/**", { timeout: 20000 });
+    await c.waitForURL("**/dashboard/client/offer/**", { timeout: 90000 });
+    await settle(c);
     await shot(c, "milestone-plan-default", "Milestone plan — the suggested split", "Accepting doesn't create a hire on its own. First the client turns ₹1,20,000 into a payment schedule. The app suggests phases that fit software work; every field is editable.");
 
     for (let i = 0; i < MILESTONES.length; i++) {
@@ -453,7 +557,8 @@ async function main() {
     await shot(c, "milestone-plan-final", "Milestone plan — the agreed split", "Five phases, front-light and back-loaded on the risky integration work. The running total has to land exactly on the agreed value; the server re-checks the sum, so a plan that doesn't balance can't create a hire.");
 
     await c.getByRole("button", { name: /Confirm hire/ }).click();
-    await c.waitForURL("**/dashboard/client/hires/**/contract", { timeout: 25000 });
+    await c.waitForURL("**/dashboard/client/hires/**/contract", { timeout: 90000 });
+    await settle(c);
 
     const hire = await db.hire.findFirst({ orderBy: { createdAt: "desc" }, include: { phases: { orderBy: { index: "asc" } } } });
     facts.phases = hire.phases.map((p) => ({ index: p.index, name: p.name, amount: Number(p.amount), id: p.id }));
@@ -464,28 +569,47 @@ async function main() {
   await step("06 — both parties sign the contract", async () => {
     await shot(c, "contract-unsigned-client", "The generated contract", "Parties, engagement, scope, the five-phase payment schedule, and ten fixed escrow/dispute clauses — generated from the hire, not typed by anyone. The SHA-256 under it is what the signatures bind to.");
 
-    await c.getByRole("checkbox").check();
-    await c.getByLabel("Type your full name to sign").fill(CLIENT.name);
+    await signContract(c);
     await shot(c, "contract-client-signing", "Client signing", "The signature is the party's full legal name, typed. The server checks it against the verified account name, so you can't sign as someone else.");
 
-    await c.getByRole("button", { name: "Sign contract" }).click();
-    await c.waitForTimeout(2000);
+    await submitSignature(c);
     await c.reload();
     await shot(c, "contract-client-signed", "Client signed — one of two", "Recorded with a timestamp and the signer's network address. Escrow is still locked: one signature is not a contract.");
 
     // Worker side
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
     await shot(w, "worker-hire-awaiting-signature", "Worker's hire — signature pending", "The worker sees the hire and a blocking banner. Nothing is funded and no work is expected until they've read the terms.");
 
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}/contract`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}/contract`);
     await shot(w, "contract-unsigned-worker", "The same document, worker side", "Byte-identical text and an identical hash — both sides render from one function, so the two parties provably cannot be shown different terms.");
 
-    await w.getByRole("checkbox").check();
-    await w.getByLabel("Type your full name to sign").fill(WORKER.name);
-    await w.getByRole("button", { name: "Sign contract" }).click();
-    await w.waitForTimeout(2000);
+    await signContract(w);
+    await submitSignature(w);
     await w.reload();
     await shot(w, "contract-fully-signed", "Fully executed", "Both signatures recorded against the same SHA-256. Change one rupee in the schedule now and the recomputed hash stops matching — the app flags the contract as void rather than silently accepting it.");
+
+    // Payment plan P3: a contract this size asks the worker for a refundable delivery
+    // stake before phase 1 can be funded. Funding only spends real balance: the first
+    // attempt reports the shortfall and offers Add funds (prefilled), then lock again.
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
+    const lockBtn = w.getByRole("button", { name: /^Lock .* stake$/ });
+    if (await lockBtn.waitFor({ timeout: 15000 }).then(() => true, () => false)) {
+      await lockBtn.click();
+      const addFunds = w.getByRole("button", { name: "Add funds" });
+      if (await addFunds.waitFor({ timeout: 30000 }).then(() => true, () => false)) {
+        await addFunds.click();
+        await w.getByText(/Added ₹/).first().waitFor({ timeout: 90000 });
+        await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
+        await lockBtn.click({ timeout: 60000 }).catch(async (e) => {
+          await w.screenshot({ path: path.join(SHOT_DIR, "..", "stake-debug.png"), fullPage: true });
+          throw e;
+        });
+      }
+      // The panel either shows "Delivery stake locked" or refreshes away — the DB decides.
+      for (let i = 0; i < 60 && !(await db.deliveryStake.findUnique({ where: { hireId } })); i++) await sleep(1500);
+      if (!(await db.deliveryStake.findUnique({ where: { hireId } }))) throw new Error("Delivery stake was not locked.");
+      console.log("  🔒 worker locked the delivery stake");
+    }
 
     const contract = await db.contract.findFirst({ where: { hireId } });
     facts.contractHash = contract.documentHash;
@@ -494,7 +618,7 @@ async function main() {
 
   // =========================================================================
   await step("07 — the client's wallet and the mock on-ramp", async () => {
-    await c.goto(`${BASE}/dashboard/client/payments`);
+    await go(c, `${BASE}/dashboard/client/payments`);
     await shot(c, "client-wallet-before", "Client wallet — before any funding", "A custodial wallet was provisioned at signup: a real on-chain address the platform holds the key for. The client never sees a key or pays gas, and the balance is shown in rupees.");
 
     await c.getByRole("button", { name: "Add Funds" }).click();
@@ -510,15 +634,14 @@ async function main() {
 
   // ---- Phase 1: the full happy path, captured in detail ----
   await step("08 — phase 1: fund → deliver → approve → release", async () => {
-    await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
+    await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
     await shot(c, "phase-tracker-unfunded", "Phase tracker — nothing funded yet", "Five phases, sequential. Only phase 1 offers a Fund button; the rest say funding unlocks when the previous phase closes, and the server enforces the same rule.");
 
-    await c.getByRole("button", { name: /^Fund Phase/ }).first().click();
-    await c.waitForTimeout(9000);
+    await fundNextPhase(c);
     await c.reload();
-    await shot(c, "phase1-funded", "Phase 1 funded — ₹15,000 in escrow", "Three on-chain transactions: mint (the mock on-ramp), approve, then fundPhase. The money has left the client's wallet and sits in the PhaseEscrow contract. Neither party can pull it out unilaterally.");
+    await shot(c, "phase1-funded", "Phase 1 funded — ₹15,000 in escrow", "Paid through the payment window from the client's ChainWork wallet: approve, then fundPhase — two on-chain transactions, and a receipt. The money has left the client's wallet and sits in the PhaseEscrow contract. Neither party can pull it out unilaterally.");
 
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
     await shot(w, "phase1-worker-funded", "Worker sees the money is locked", "This is the point of the whole design: the worker starts phase 1 knowing ₹15,000 is already locked and can only go to them or back to the client by a rule, not by the client's mood.");
 
     await w.getByRole("button", { name: "Mark Delivered" }).first().click();
@@ -526,7 +649,7 @@ async function main() {
     await w.reload();
     await shot(w, "phase1-delivered", "Phase 1 delivered", "The worker marks delivery. That opens the client's verification window — two working days, weekends and configured holidays skipped — and the same deadline is written into the smart contract, which refuses an early auto-release.");
 
-    await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
+    await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
     await shot(c, "phase1-awaiting-approval", "Client's verification window", "Approve and release, request changes (twice at most), or escalate. Doing nothing is also an outcome — see phase 3.");
 
     await c.getByRole("button", { name: /^Approve/ }).first().click();
@@ -536,35 +659,34 @@ async function main() {
     await c.reload();
     await shot(c, "phase1-released", "Phase 1 closed — phase 2 unlocked", "Released, irreversibly. Phase 2's Fund button appears only now.");
 
-    await w.goto(`${BASE}/dashboard/worker/earnings`);
+    await go(w, `${BASE}/dashboard/worker/earnings`);
     await shot(w, "worker-earnings-after-p1", "The worker's money", "₹15,000, an on-chain balance read live from the token contract — not a number in our database. The transaction row carries the real hash.");
   });
 
   // ---- Phase 2: with a revision round ----
   await step("09 — phase 2: fund → deliver → changes requested → redeliver → release", async () => {
-    await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
-    await c.getByRole("button", { name: /^Fund Phase/ }).first().click();
-    await c.waitForTimeout(9000);
+    await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
+    await fundNextPhase(c);
     await c.reload();
     await shot(c, "phase2-funded", "Phase 2 funded — ₹25,000", "Exactly the pattern your brief describes: the client tops the next phase up only after the previous one closed. Total exposure at any moment is one phase, never the whole ₹1,20,000.");
 
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
     await w.getByRole("button", { name: "Mark Delivered" }).first().click();
     await w.waitForTimeout(6000);
 
-    await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
+    await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
     await c.getByRole("button", { name: /^Request Changes/ }).first().click();
     await c.waitForTimeout(2500);
     await c.reload();
     await shot(c, "phase2-changes-requested", "Changes requested", "Not everything is a dispute. Two revision rounds are built in; each one resets the verification window on redelivery. After the second, the app pushes you to a complaint instead of an endless loop.");
 
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
     await w.getByRole("button", { name: "Mark Delivered" }).first().click();
     await w.waitForTimeout(6000);
     await w.reload();
     await shot(w, "phase2-redelivered", "Redelivered", "The escrow never moved during the revision — it stayed locked the whole time.");
 
-    await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
+    await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
     await c.getByRole("button", { name: /^Approve/ }).first().click();
     await c.waitForTimeout(8000);
     await c.reload();
@@ -573,11 +695,10 @@ async function main() {
 
   // ---- Phase 3: the client goes quiet → reminders → auto-release ----
   await step("10 — phase 3: the client goes silent, escrow auto-releases", async () => {
-    await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
-    await c.getByRole("button", { name: /^Fund Phase/ }).first().click();
-    await c.waitForTimeout(9000);
+    await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
+    await fundNextPhase(c);
 
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
     await w.getByRole("button", { name: "Mark Delivered" }).first().click();
     await w.waitForTimeout(6000);
     await w.reload();
@@ -599,7 +720,7 @@ async function main() {
     // so the numbered sequence is the same on every run.
     let released = (await runCronTick()).autoReleased > 0;
     await sleep(1200);
-    await c.goto(`${BASE}/dashboard/client/notifications`);
+    await go(c, `${BASE}/dashboard/client/notifications`);
     await shot(c, "phase3-reminders", "Reminders, capped", "The timing worker sends a bounded number of nudges — two by default, configurable by an admin. It is not a nagging loop; it's a countdown with a defined end.");
 
     for (let i = 0; i < 8 && !released; i++) {
@@ -608,25 +729,24 @@ async function main() {
     }
     if (!released) console.warn("  ⚠ phase 3 did not auto-release — check the chain fast-forward and CRON_SECRET.");
 
-    await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+    await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
     await shot(w, "phase3-auto-released", "Auto-released", "The window lapsed with the reminders spent, so the escrow paid out on its own — the smart contract's autoRelease, which reverts if called even a second early. Silence is not leverage.");
 
-    await w.goto(`${BASE}/dashboard/worker/earnings`);
+    await go(w, `${BASE}/dashboard/worker/earnings`);
     await shot(w, "worker-earnings-after-p3", "₹70,000 received across three phases", "Two approved by the client, one released by the clock. Same destination either way.");
   });
 
   // ---- Phases 4 and 5 ----
   await step("11 — phases 4 and 5 close out the project", async () => {
     for (const idx of [4, 5]) {
-      await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
-      await c.getByRole("button", { name: /^Fund Phase/ }).first().click();
-      await c.waitForTimeout(9000);
+      await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
+      await fundNextPhase(c);
 
-      await w.goto(`${BASE}/dashboard/worker/hires/${hireId}`);
+      await go(w, `${BASE}/dashboard/worker/hires/${hireId}`);
       await w.getByRole("button", { name: "Mark Delivered" }).first().click();
       await w.waitForTimeout(6000);
 
-      await c.goto(`${BASE}/dashboard/client/hires/${hireId}`);
+      await go(c, `${BASE}/dashboard/client/hires/${hireId}`);
       await c.getByRole("button", { name: /^Approve/ }).first().click();
       await c.waitForTimeout(8000);
 
@@ -641,7 +761,7 @@ async function main() {
 
   // =========================================================================
   await step("12 — mutual reviews", async () => {
-    await c.goto(`${BASE}/dashboard/client/reviews`);
+    await go(c, `${BASE}/dashboard/client/reviews`);
     await c.getByRole("button", { name: "Leave a review" }).first().click();
     await c.getByLabel("5 stars").nth(0).click();
     await c.getByLabel("5 stars").nth(1).click();
@@ -654,7 +774,7 @@ async function main() {
     await c.getByRole("button", { name: "Submit review" }).click();
     await c.waitForTimeout(2500);
 
-    await w.goto(`${BASE}/dashboard/worker/reviews`);
+    await go(w, `${BASE}/dashboard/worker/reviews`);
     await w.getByRole("button", { name: "Leave a review" }).first().click();
     await w.getByLabel("5 stars").nth(0).click();
     await w.getByPlaceholder(/Share a few words/).fill(
@@ -668,7 +788,7 @@ async function main() {
 
   // =========================================================================
   await step("13 — the worker takes the money out", async () => {
-    await w.goto(`${BASE}/dashboard/worker/earnings`);
+    await go(w, `${BASE}/dashboard/worker/earnings`);
     await shot(w, "worker-earnings-final", "₹1,20,000 earned", "The full contract value, in the worker's own on-chain wallet, with a transaction row and hash per phase.");
 
     const summary = await db.wallet.findFirst({ where: { user: { email: WORKER.email } } });
@@ -679,7 +799,7 @@ async function main() {
     await w.reload();
     await shot(w, "worker-withdrawn", "Withdrawn — the off-ramp", "The balance really leaves the wallet: a genuine on-chain transfer out of custody. In this build the destination is the platform's off-ramp sink; in production that call is replaced by a payment processor paying INR into the worker's bank account or UPI ID.");
 
-    await w.goto(`${BASE}/dashboard/worker/profile`);
+    await go(w, `${BASE}/dashboard/worker/profile`);
     await shot(w, "worker-profile-final", "The worker's profile after one project", "Rating, completed-job count and the published charges — the reputation this contract just earned, which is what gets them the next one.");
   });
 

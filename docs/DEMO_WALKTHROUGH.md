@@ -322,7 +322,7 @@ Five phases, strictly sequential. Only phase 1 offers a Fund button; the others 
 
 ![Phase 1 funded — ₹15,000 in escrow](images/demo/41-phase1-funded.png)
 
-Three on-chain transactions fire: **mint** (the mock on-ramp topping up the shortfall), **approve** (the ERC-20 allowance), then **fundPhase**. The money has left the client's wallet and now sits inside the `PhaseEscrow` contract, keyed to this phase.
+**Fund Phase** opens the payment window: the amount due, the currency (cwINR from the ChainWork wallet here — USDT, USDC or the chain's coin from the client's own wallet are offered once the worker has linked theirs), the worker's payout address with a QR code, and the escrow contract the money goes into. Paying fires two on-chain transactions — **approve** (the ERC-20 allowance) and **fundPhase** — and issues a receipt. The money has left the client's wallet and now sits inside the `PhaseEscrow` contract, keyed to this phase. (The wallet was topped up beforehand: funding only spends what is really there.)
 
 Neither party can pull it out. The contract exposes no function that sends escrowed funds anywhere except the recorded worker or the recorded client, and the tests prove it.
 

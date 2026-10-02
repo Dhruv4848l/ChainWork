@@ -13,9 +13,11 @@ import path from "node:path";
   console gets into `.dev-outbox.json` so `scripts/demo-capture.mjs` — and a human
   who'd rather not scroll a terminal — can pick the code up.
 
-  SAFETY: this is a no-op unless NODE_ENV !== "production" AND the provider actually
-  took the mock path. Real Twilio/Resend sends never reach here, and the file is in
-  .gitignore. It is a dev convenience, not a feature.
+  SAFETY: this is a no-op unless the provider actually took the mock path AND either
+  NODE_ENV !== "production", or DEV_OUTBOX=1 on a server whose APP_BASE_URL is localhost
+  (`npm run demo:serve` — a local production build for scripted captures, which the
+  webpack dev server is too flaky for). Real Twilio/Resend sends never reach here, and
+  the file is in .gitignore. It is a dev convenience, not a feature.
 */
 
 const FILE = path.join(process.cwd(), ".dev-outbox.json");
@@ -33,8 +35,17 @@ export interface OutboxEntry {
   link?: string;
 }
 
+function isLocalBase(): boolean {
+  try {
+    return ["localhost", "127.0.0.1", "[::1]"].includes(new URL(process.env.APP_BASE_URL ?? "").hostname);
+  } catch {
+    return false;
+  }
+}
+
 function enabled(): boolean {
-  return process.env.NODE_ENV !== "production";
+  if (process.env.NODE_ENV !== "production") return true;
+  return process.env.DEV_OUTBOX === "1" && isLocalBase();
 }
 
 function readAll(): OutboxEntry[] {
