@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { hireStake } from "@/lib/escrow/stake";
 import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
 import { requireRole, assertKycVerified } from "@/lib/auth/guards";
@@ -148,6 +149,13 @@ export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
     return {
       error: `${who} signed the contract yet — escrow unlocks once both signatures are recorded.`,
     };
+  }
+
+  // STAKE GATE (P3.6) — above the threshold the worker's refundable delivery stake must be
+  // in escrow before the client is asked to fund anything.
+  const stake = await hireStake(phase.hire);
+  if (stake.state === "AWAITING") {
+    return { error: `The worker hasn't locked their ₹${stake.amountInr.toLocaleString("en-IN")} delivery stake yet — funding opens once it's in escrow.` };
   }
 
   // KYC gate — blocks money movement until VERIFIED (redirects to soft-block).

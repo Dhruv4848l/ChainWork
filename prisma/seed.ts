@@ -439,6 +439,7 @@ async function main() {
       { key: "reminder_cap_per_window", value: "2", valueType: "NUMBER", category: "escrow", hint: "Reminders per verification window, then auto-resolve fires" },
       { key: "cancellation_penalty_pct", value: "10", valueType: "PERCENT", category: "fees", hint: "Pre-work cancellation penalty" },
       { key: "delivery_stake_threshold_inr", value: "10000", valueType: "NUMBER", category: "escrow", hint: "Contracts above this lock a worker delivery stake" },
+      { key: "delivery_stake_pct", value: "10", valueType: "NUMBER", category: "escrow", hint: "Delivery stake as % of the contract value" },
       { key: "kyc_mandatory_threshold_inr", value: "0", valueType: "NUMBER", category: "kyc", hint: "KYC gate before any money movement" },
       { key: "jury_panel_small", value: "3", valueType: "NUMBER", category: "jury", hint: "Panel size — small case value" },
       { key: "jury_panel_standard", value: "5", valueType: "NUMBER", category: "jury", hint: "Panel size — standard case value" },

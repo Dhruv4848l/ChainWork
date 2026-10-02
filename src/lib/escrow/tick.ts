@@ -1,4 +1,5 @@
 import "server-only";
+import { forfeitDeliveryStake } from "./stake";
 import { platformDb } from "@/lib/platformDb";
 import { getPlatformSettings } from "@/lib/config/platformConfig";
 import { addBusinessDays } from "@/lib/calendar/businessDays";
@@ -131,18 +132,19 @@ export async function runEscrowTick(now: Date = new Date()): Promise<TickResult>
                 { userId: p.hire.workerId, type: "SYSTEM", title: "Phase auto-cancelled", body: `You missed the delivery window on "${p.name}". The escrow was returned to the client and a strike was applied.` },
               ],
             });
-            // Forfeit the delivery stake to the client if one was required for this hire.
-            // TODO(payment plan P3.6 / F5): forfeit on-chain via chain.forfeitStake through runPayment.
-            if (p.hire.deliveryStake && p.hire.deliveryStake.status === "LOCKED" && Number(p.hire.totalValue) >= settings.deliveryStakeThresholdInr) {
-              await tx.deliveryStake.update({ where: { id: p.hire.deliveryStake.id }, data: { status: "FORFEITED", resolvedAt: now } });
-            }
+            // The delivery stake is forfeited ON-CHAIN after this refund commits (afterConfirmed
+            // below → forfeitDeliveryStake, its own receipted payment — payment plan P3.6).
             // Strike the worker; suspend past the threshold.
             const worker = await tx.user.update({ where: { id: p.hire.workerId }, data: { strikes: { increment: 1 } } });
             if (worker.strikes >= settings.workerStrikeSuspendThreshold && !worker.suspended) {
               await tx.user.update({ where: { id: worker.id }, data: { suspended: true } });
             }
           },
-          afterConfirmed: () => refreshBalanceCache(p.hire.clientId),
+          afterConfirmed: async () => {
+            await refreshBalanceCache(p.hire.clientId);
+            const f = await forfeitDeliveryStake(p.hireId);
+            if (f && !f.ok) res_.errors.push(`forfeitStake ${p.hireId}: ${f.code}`);
+          },
         },
       );
       if (res.ok) res_.autoCancelled++;

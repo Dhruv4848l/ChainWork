@@ -93,9 +93,11 @@ export function istDateTime(iso: string): string {
 }
 
 /** "Fan installation · Phase 1 “Site prep & materials”" */
-export function purposeLine(c: Pick<ReceiptContent, "purpose">): string {
+export function purposeLine(c: Pick<ReceiptContent, "purpose"> & Partial<Pick<ReceiptContent, "kind">>): string {
   const { jobTitle, phaseIndex, phaseName } = c.purpose;
-  const phase = phaseIndex != null ? `Phase ${phaseIndex}${phaseName ? ` “${phaseName}”` : ""}` : null;
+  const phase = phaseIndex != null
+    ? `Phase ${phaseIndex}${phaseName ? ` “${phaseName}”` : ""}`
+    : c.kind?.startsWith("STAKE_") ? "Delivery stake" : null;
   return [jobTitle, phase].filter(Boolean).join(" · ") || "ChainWork wallet";
 }
 

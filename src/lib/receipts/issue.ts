@@ -34,7 +34,7 @@ async function nextSequence(tx: Prisma.TransactionClient, key: string): Promise<
 
 /** Build the frozen snapshot (without its number) from the stored payment + related names. */
 async function snapshot(tx: Prisma.TransactionClient, p: PaymentTransaction): Promise<Omit<ReceiptContent, "receiptNo" | "issuedAt">> {
-  const [payer, payee, phase] = await Promise.all([
+  const [payer, payee, phase, hire] = await Promise.all([
     p.payerUserId ? tx.user.findUnique({ where: { id: p.payerUserId }, select: { name: true } }) : null,
     p.payeeUserId ? tx.user.findUnique({ where: { id: p.payeeUserId }, select: { name: true } }) : null,
     p.phaseId
@@ -43,6 +43,8 @@ async function snapshot(tx: Prisma.TransactionClient, p: PaymentTransaction): Pr
           select: { index: true, name: true, hire: { select: { job: { select: { title: true } } } } },
         })
       : null,
+    // Hire-level payments (the delivery stake) have no phase — name the job from the hire.
+    !p.phaseId && p.hireId ? tx.hire.findUnique({ where: { id: p.hireId }, select: { job: { select: { title: true } } } }) : null,
   ]);
   const finalizedAt = p.finalizedAt ?? new Date();
   return {
@@ -65,7 +67,7 @@ async function snapshot(tx: Prisma.TransactionClient, p: PaymentTransaction): Pr
     purpose: {
       hireId: p.hireId,
       phaseId: p.phaseId,
-      jobTitle: phase?.hire.job.title ?? null,
+      jobTitle: phase?.hire.job.title ?? hire?.job.title ?? null,
       phaseIndex: phase?.index ?? null,
       phaseName: phase?.name ?? null,
     },

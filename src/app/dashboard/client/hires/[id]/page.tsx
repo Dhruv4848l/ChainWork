@@ -10,6 +10,9 @@ import { StubButton } from "@/features/shared/StubButton";
 import { markNoShowAction, proposeSettlementAction } from "@/features/client/actions";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { hireStake } from "@/lib/escrow/stake";
+
+const STAKE_WORD: Record<string, string> = { LOCKED: "locked", REFUNDED: "returned to the worker", FORFEITED: "forfeited to you" };
 import { PhasePayoutLine, PhaseReceiptLinks } from "@/features/shared/PhaseReceiptLinks";
 import { getPhasePayouts, getPhaseReceipts } from "@/features/shared/paymentHistory";
 
@@ -29,9 +32,10 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
   const { id } = await params;
   const hire = await getClientHireDetail(id, user.id);
   if (!hire) notFound();
-  const [receipts, payouts] = await Promise.all([
+  const [receipts, payouts, stake] = await Promise.all([
     getPhaseReceipts(hire.phases.map((p) => p.id), user.id),
     getPhasePayouts(hire.phases, hire.workerId, "client"),
+    hireStake(hire),
   ]);
 
   const phaseViews: PhaseView[] = hire.phases.map((p) => ({
@@ -49,7 +53,7 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
   // phase or the previous one released.
   const actionsByPhase: Record<string, React.ReactNode> = {};
   hire.phases.forEach((p, i) => {
-    const fundable = fullySigned && (i === 0 || hire.phases[i - 1]?.status === "RELEASED");
+    const fundable = fullySigned && stake.state !== "AWAITING" && (i === 0 || hire.phases[i - 1]?.status === "RELEASED");
     const controls = (
       <ClientPhaseControls
         phaseId={p.id}
@@ -87,10 +91,17 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
         </div>
         {hire.deliveryStake && (
           <div className="flex items-center gap-2 rounded-full border border-bronze/30 bg-card px-4 py-2 text-[11.5px] font-semibold text-bronze">
-            Worker stake: {formatInr(Number(hire.deliveryStake.amount))} locked
+            Worker stake: {formatInr(Number(hire.deliveryStake.amount))} {STAKE_WORD[hire.deliveryStake.status]}
           </div>
         )}
       </div>
+
+      {fullySigned && stake.state === "AWAITING" && (
+        <div className="mb-4 rounded-xl border border-amber/40 bg-amber/10 px-5 py-4 text-[13px] text-amber">
+          <span className="font-semibold">Waiting on the worker&apos;s delivery stake</span> — this contract asks them to lock a refundable{" "}
+          {formatInr(stake.amountInr)} in escrow first. It&apos;s paid to you if they abandon a phase. You can fund phase 1 once it&apos;s locked.
+        </div>
+      )}
 
       {!fullySigned && (
         <Link

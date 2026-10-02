@@ -11,6 +11,8 @@ export interface PlatformSettings {
   verificationWindowWorkingDays: number;
   reminderCap: number;
   deliveryStakeThresholdInr: number;
+  /** % of the contract value a worker locks as a delivery stake (P3.6). */
+  deliveryStakePct: number;
   cancellationPenaltyPct: number;
   workerGraceBusinessDays: number;
   workerStrikeSuspendThreshold: number;
@@ -21,6 +23,7 @@ const DEFAULTS: PlatformSettings = {
   verificationWindowWorkingDays: 2,
   reminderCap: 2,
   deliveryStakeThresholdInr: 10000,
+  deliveryStakePct: 10,
   cancellationPenaltyPct: 10,
   workerGraceBusinessDays: 1,
   workerStrikeSuspendThreshold: 3,
@@ -49,6 +52,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     verificationWindowWorkingDays: num("verification_window_working_days", DEFAULTS.verificationWindowWorkingDays),
     reminderCap: num("reminder_cap_per_window", DEFAULTS.reminderCap),
     deliveryStakeThresholdInr: num("delivery_stake_threshold_inr", DEFAULTS.deliveryStakeThresholdInr),
+    deliveryStakePct: num("delivery_stake_pct", DEFAULTS.deliveryStakePct),
     cancellationPenaltyPct: num("cancellation_penalty_pct", DEFAULTS.cancellationPenaltyPct),
     workerGraceBusinessDays: num("worker_grace_business_days", DEFAULTS.workerGraceBusinessDays),
     workerStrikeSuspendThreshold: num("worker_strike_suspend_threshold", DEFAULTS.workerStrikeSuspendThreshold),

@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
-import { requireRole } from "@/lib/auth/guards";
+import { assertKycVerified, requireRole } from "@/lib/auth/guards";
+import { hireStake, lockDeliveryStake } from "@/lib/escrow/stake";
+import { custodialAddressOf } from "@/lib/payments/parties";
 import * as chain from "@/lib/chain/escrow";
 import { canTransitionPhase, phaseTransition } from "@/lib/escrow/phaseMachine";
 import { classifyPaymentError } from "@/lib/payments/errors";
@@ -22,6 +24,34 @@ export interface ActionState {
   ok?: boolean;
   error?: string;
   message?: string;
+  code?: string;
+  /** INSUFFICIENT_BALANCE only: how much more the wallet needs (₹, rounded up). */
+  shortfallInr?: number;
+  receiptNo?: string | null;
+}
+
+/**
+ * Lock the refundable delivery stake for a hire (payment plan P3.6). From the worker's
+ * real balance; a shortfall reports the exact amount to add. Receipted like any payment.
+ */
+export async function lockStakeAction(hireId: string): Promise<ActionState> {
+  const user = await requireRole("WORKER");
+  await assertKycVerified(user, `/dashboard/worker/hires/${hireId}`);
+  const res = await lockDeliveryStake(hireId, user.id);
+  revalidatePath(`/dashboard/worker/hires/${hireId}`);
+  revalidatePath(`/dashboard/client/hires/${hireId}`);
+  revalidatePath("/dashboard/worker/earnings");
+  if (!res.ok) {
+    let shortfallInr: number | undefined;
+    if (res.code === "INSUFFICIENT_BALANCE") {
+      const hire = await platformDb.hire.findUnique({ where: { id: hireId } });
+      const stake = hire ? await hireStake(hire) : null;
+      const spendable = await chain.balanceOfInr(await custodialAddressOf(user.id)).catch(() => 0);
+      if (stake) shortfallInr = Math.max(1, Math.ceil(stake.amountInr - spendable));
+    }
+    return { error: res.reason, code: res.code, shortfallInr, receiptNo: "receiptNo" in res ? res.receiptNo : null };
+  }
+  return { ok: true, message: "Delivery stake locked — the client can now fund phase 1.", receiptNo: res.receiptNo };
 }
 
 function str(fd: FormData, key: string) {

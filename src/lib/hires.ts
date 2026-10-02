@@ -2,6 +2,7 @@ import "server-only";
 import { platformDb } from "@/lib/platformDb";
 import { notify } from "@/lib/notify";
 import { isPhaseSettled } from "@/lib/escrow/phaseMachine";
+import { refundDeliveryStake } from "@/lib/escrow/stake";
 
 /*
   Hire completion. A hire is COMPLETED once every one of its phases is settled —
@@ -28,6 +29,15 @@ export async function maybeCompleteHire(hireId: string): Promise<boolean> {
     return true;
   });
   if (!completed) return false;
+
+  // The job is done: return the worker's delivery stake on-chain (receipted; a failure is
+  // recorded and the reconciler / an admin can retry — it never blocks completion).
+  try {
+    const r = await refundDeliveryStake(hireId);
+    if (r && !r.ok) console.warn(`[hires] stake refund for ${hireId} failed: ${r.code}`);
+  } catch (e) {
+    console.warn(`[hires] stake refund for ${hireId} threw:`, (e as Error).message?.slice(0, 120));
+  }
 
   await Promise.all([
     notify({

@@ -38,7 +38,7 @@ const STATE: Record<string, HistoryState> = {
 };
 
 /** Badge for a completed movement that didn't touch the viewer's own wallet: name the event. */
-const NEUTRAL_LABEL: Record<string, string> = { FUND: "Funded", RELEASE: "Released", SPLIT: "Settled", REFUND: "Refunded" };
+const NEUTRAL_LABEL: Record<string, string> = { FUND: "Funded", RELEASE: "Released", SPLIT: "Settled", REFUND: "Refunded", STAKE_FORFEIT: "Forfeited" };
 
 /** Movements where money leaves the payer's spendable wallet (as opposed to escrow → someone). */
 const OUTFLOW_FROM_PAYER = new Set(["FUND", "WITHDRAW", "MOVE_TO_EXTERNAL", "STAKE_LOCK"]);
@@ -85,6 +85,7 @@ export async function getPaymentHistory(userId: string, take = 50): Promise<Hist
 
     const context = p.phase
       ? `${p.phase.hire.job.title} · Phase ${p.phase.index} “${p.phase.name}”`
+      : p.kind.startsWith("STAKE_") ? `Delivery stake${p.hireId ? ` · hire #${p.hireId.slice(-6)}` : ""}`
       : p.kind === "TOPUP" ? "Wallet" : p.kind === "WITHDRAW" ? "To your bank / UPI" : "Wallet";
 
     return {

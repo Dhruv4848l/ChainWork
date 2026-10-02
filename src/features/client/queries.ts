@@ -1,5 +1,7 @@
 import "server-only";
 import { isPhaseSettled } from "@/lib/escrow/phaseMachine";
+import { stakeRequired, stakeState } from "@/lib/escrow/stakeRules";
+import { getPlatformSettings } from "@/lib/config/platformConfig";
 import { platformDb } from "@/lib/platformDb";
 
 /*
@@ -124,14 +126,18 @@ export async function getClientPayments(userId: string) {
     include: {
       job: true,
       contract: { select: { clientSignature: true, workerSignature: true } },
+      deliveryStake: { select: { status: true } },
       phases: { include: { escrowTransactions: true }, orderBy: { index: "asc" } },
     },
   });
   const phases = hires.flatMap((h) => h.phases.map((p) => ({ ...p, hireTitle: h.job.title })));
   // Only what can actually be funded right now — the same gates fundPhaseAction enforces:
   // both signatures recorded, and the previous phase settled (sequential funding).
+  const settings = await getPlatformSettings();
   const dueToFund = hires.flatMap((h) => {
     if (!h.contract?.clientSignature || !h.contract?.workerSignature) return [];
+    // …and the worker's delivery stake, where one is required (P3.6).
+    if (stakeState(stakeRequired(Number(h.totalValue), settings.deliveryStakeThresholdInr), h.deliveryStake?.status ?? null) === "AWAITING") return [];
     return h.phases
       .filter((p, i) => p.status === "PENDING_FUNDING" && (i === 0 || isPhaseSettled(h.phases[i - 1].status)))
       .map((p) => ({ ...p, hireTitle: h.job.title }));

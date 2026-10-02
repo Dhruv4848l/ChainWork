@@ -9,6 +9,10 @@ import { StubButton } from "@/features/worker/StubButton";
 import { markPhaseDeliveredAction, checkInAction } from "@/features/worker/actions";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { StakePanel } from "@/features/worker/StakePanel";
+import { hireStake } from "@/lib/escrow/stake";
+
+const STAKE_WORD: Record<string, string> = { LOCKED: "locked in escrow", REFUNDED: "returned to you", FORFEITED: "forfeited" };
 import { PhasePayoutLine, PhaseReceiptLinks } from "@/features/shared/PhaseReceiptLinks";
 import { getPhasePayouts, getPhaseReceipts } from "@/features/shared/paymentHistory";
 
@@ -28,9 +32,10 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
   const { id } = await params;
   const hire = await getWorkerHireDetail(id, user.id);
   if (!hire) notFound();
-  const [receipts, payouts] = await Promise.all([
+  const [receipts, payouts, stake] = await Promise.all([
     getPhaseReceipts(hire.phases.map((p) => p.id), user.id),
     getPhasePayouts(hire.phases, hire.workerId, "worker"),
+    hireStake(hire),
   ]);
 
   const phaseViews: PhaseView[] = hire.phases.map((p) => ({
@@ -79,10 +84,14 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
         </div>
         {hire.deliveryStake && (
           <div className="flex items-center gap-2 rounded-full border border-bronze/30 bg-card px-4 py-2 text-[11.5px] font-semibold text-bronze">
-            Delivery stake: {formatInr(Number(hire.deliveryStake.amount))} {hire.deliveryStake.status.toLowerCase()}
+            Delivery stake: {formatInr(Number(hire.deliveryStake.amount))} {STAKE_WORD[hire.deliveryStake.status]}
           </div>
         )}
       </div>
+
+      {fullySigned && stake.state === "AWAITING" && (
+        <StakePanel hireId={hire.id} amountInr={stake.amountInr} totalInr={Number(hire.totalValue)} />
+      )}
 
       {!fullySigned && (
         <Link
