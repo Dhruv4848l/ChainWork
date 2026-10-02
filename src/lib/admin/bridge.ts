@@ -6,6 +6,7 @@ import * as chain from "@/lib/chain/escrow";
 import { runPayment } from "@/lib/payments/service";
 import { escrowAddressLabel, refreshBalanceCache } from "@/lib/payments/parties";
 import { maybeCompleteHire } from "@/lib/hires";
+import type { ReceiptContent } from "@/lib/receipts/content";
 
 /** ADM-09 pending confirmations (the Phase 8 auto-release countdown data). */
 export async function bridgePendingConfirmations() {
@@ -252,4 +253,17 @@ export async function bridgeExecuteVerdictSplit(phaseId: string, workerBps: numb
   return res.ok
     ? { ok: true as const, paymentId: res.paymentId, txHash: res.txHash }
     : { ok: false as const, paymentId: res.paymentId, code: res.code, reason: res.reason };
+}
+
+// ---- receipts (payment plan P2.4) ----
+/**
+ * A payment receipt for admin download, by receipt number. Returns the frozen
+ * receipt snapshot (names + wallet addresses, never emails/phones) and its hash.
+ */
+export async function bridgeReceipt(receiptNo: string) {
+  const r = await platformDb.receipt.findUnique({
+    where: { receiptNo },
+    select: { receiptNo: true, content: true, contentHash: true },
+  });
+  return r ? { receiptNo: r.receiptNo, content: r.content as unknown as ReceiptContent, contentHash: r.contentHash } : null;
 }

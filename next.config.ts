@@ -37,6 +37,14 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The receipt PDF reads its fonts from node_modules at runtime (src/lib/receipts/pdf.ts);
+  // make sure the serverless bundle ships them.
+  outputFileTracingIncludes: {
+    "/api/receipts/**": [
+      "./node_modules/@fontsource/outfit/files/outfit-latin-{400,600}-normal.woff",
+      "./node_modules/@fontsource/noto-sans/files/noto-sans-devanagari-{400,600}-normal.woff",
+    ],
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
