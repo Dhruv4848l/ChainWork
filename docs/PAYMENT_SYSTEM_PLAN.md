@@ -1,6 +1,6 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 done · P1 done (2026-10-02) · next: P2 — see PROGRESS.md "Resume here"**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 · P1 · P2 done (2026-10-02) · next: P3 — see PROGRESS.md "Resume here"**_
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:
@@ -297,3 +297,9 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
 - **Reconciler side effects:** when it finishes a payment it applies the money effects
   (phase status, ledger, escrow row), but not action-specific extras such as a no-show
   strike or notifications.
+- **P2 (2026-10-02):** a receipt stores a frozen content snapshot (`Receipt.content`) next to
+  its hash, so names on old receipts don't change when a user renames. Failed receipts say
+  "No money was moved" — in this system a failed payment never moves funds. The statement
+  shows escrow as a running balance but the wallet only as in / out / net until P3.1 makes
+  every wallet credit a recorded payment. Notifications name the receipt and link to the
+  page that lists it (not to the PDF itself — the notification centre navigates in-app).

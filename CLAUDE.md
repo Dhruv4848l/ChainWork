@@ -589,6 +589,14 @@ Three gaps between the built product and the story we demo were closed here.
   DB by hand. Phase status changes go through `src/lib/escrow/phaseMachine.ts` with
   guarded `updateMany`. Relayer/custodial sends are serialised by `signerLock.ts`; the cron
   tick ends with `reconcile()`. Run server scripts with `npm run script -- <file.mts>`.
+- **Receipts (P2):** `src/lib/receipts/`. Never create a Receipt by hand — `issueReceipt()`
+  runs inside `confirmPayment` / `failPayment`, so every final payment gets exactly one
+  (gap-free `CW-RCPT-` / `CW-FAIL-` yearly numbers). Hooks get the receipt
+  (`onConfirmedTx(tx, payment, receipt)`), and `runPayment` returns `receiptNo`. PDFs render
+  from the frozen `Receipt.content` snapshot (`pdf.ts`; shared kit `pdfKit.ts`; wording in
+  `present.ts`). Admin reads go through `bridge.bridgeReceipt`. Statements:
+  `statement.ts` / `statementMath.ts` (integer paise). Fonts come from `@fontsource` and are
+  traced via `outputFileTracingIncludes` in next.config.ts.
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)

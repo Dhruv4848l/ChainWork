@@ -54,6 +54,7 @@ test("labels: auto-release, failure headline, watermark per mode", () => {
 
 test("purpose, IST time, masking and paths", () => {
   assert.equal(purposeLine(base()), "Android app · Phase 2 “UI build”");
+  assert.equal(purposeLine(base({ purpose: { hireId: null, phaseId: null, jobTitle: null, phaseIndex: null, phaseName: null } })), "ChainWork wallet");
   assert.equal(istDateTime("2026-10-02T04:51:05.000Z").endsWith("IST"), true);
   assert.match(istDateTime("2026-10-02T04:51:05.000Z"), /10:21:05/);
   assert.equal(maskName("Ravi Kumar"), "R••• K•••");

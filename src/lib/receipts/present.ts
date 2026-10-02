@@ -96,7 +96,7 @@ export function istDateTime(iso: string): string {
 export function purposeLine(c: Pick<ReceiptContent, "purpose">): string {
   const { jobTitle, phaseIndex, phaseName } = c.purpose;
   const phase = phaseIndex != null ? `Phase ${phaseIndex}${phaseName ? ` “${phaseName}”` : ""}` : null;
-  return [jobTitle, phase].filter(Boolean).join(" · ") || "—";
+  return [jobTitle, phase].filter(Boolean).join(" · ") || "ChainWork wallet";
 }
 
 /** The public verify page for a receipt; `h` carries the content hash the QR vouches for. */

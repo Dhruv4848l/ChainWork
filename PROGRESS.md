@@ -344,7 +344,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 |---|---|---|
 | P0 | Foundations & safety — payment mode, chain adapters, key/role/gas guards, health check, mode banner | ✅ Done (2026-09-28) |
 | P1 | Payment ledger, transaction outbox, state machines, reconciler | ✅ Done (2026-10-02 — UI path verified) |
-| P2 | PDF receipts (success + failed) and statements | — |
+| P2 | PDF receipts (success + failed) and statements | ✅ Done (2026-10-02) |
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | — |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | — |
 | P5 | Live wallet tracker + rolling ticker | — |
@@ -405,15 +405,46 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   `npm run dev:webpack` (launch config `web-webpack`; `scripts/start-local.cmd` uses it).
   Production builds are unaffected.
 
+**P2 — what changed (done 2026-10-02)**
+- **Receipts for every final payment, success AND failure** (`src/lib/receipts/`, migration
+  `receipts`). Issued inside the same DB transaction that finalises the payment
+  (`service.confirmPayment` / `failPayment`), numbered from gap-free yearly counters —
+  `CW-RCPT-2026-000123` (paid) and `CW-FAIL-2026-000045` (failed / cancelled) — with a
+  frozen content snapshot + its SHA-256. `backfill-payments` also issues receipts for older
+  payments.
+- **UPI-style receipt PDF** (pdf-lib + fontkit; Outfit + Noto Sans Devanagari for ₹ and
+  Hindi names): status, ₹ amount, From/To with wallet addresses, purpose, tx hash, block,
+  network fee and who paid it, failure reason + "No money was moved.", DEMO / TESTNET
+  watermark, verify QR + hash. Download: `GET /api/receipts/[no]/pdf` — payer, payee, or an
+  admin with payments access via `bridge.bridgeReceipt` (two-DB rule); everyone else 404.
+- **Public verify page** `/receipts/verify/[no]?h=` (Authentic / Does not match / Not found,
+  names + addresses masked).
+- **Where receipts show up:** a Transactions card on Payments + Earnings (viewer-relative
+  Paid / Received, failed attempts included), per-phase receipt links on both hire pages,
+  receipt numbers in the money notifications, and a "Download receipt" link on a failed
+  fund / approve.
+- **Account statement PDF** `GET /api/statements/pdf?from&to` (own account only, IST days,
+  ≤ 1 year, multi-page): escrow as a running-balance ledger; wallet as in / out / net (a
+  ledger-derived wallet *balance* needs P3.1 — see below). Form under the Transactions card.
+- **Verified:** 57 unit tests; live — fund, release, failed release, withdrawal and demo
+  receipts render correctly; party download 200, non-party / anonymous 404; verify page
+  verdicts; statement 200 / 400 / 401; prod build traces the fonts for both PDF routes.
+
 **Resume here**
-1. Start **P2 — PDF receipts** (docs/PAYMENT_SYSTEM_PLAN.md §3 P2).
-2. Found during the P1 UI check, belongs to **P3** (wallet model): in `testnet` mode the
-   wallet card still shows the ₹40,000 demo credit, and funding mints test tokens behind
-   the scenes (W2). "Next phase funding due" on CL-08 lists a phase whose predecessor
+1. Start **P3 — wallet model rework** (docs/PAYMENT_SYSTEM_PLAN.md §3 P3). First item, 3.1:
+   funding must spend the real balance (no hidden mint in `fundPhase`; shortfall →
+   `INSUFFICIENT_BALANCE` → Add funds), so every wallet credit becomes a recorded TOPUP.
+   Then the statement can show a true wallet running balance (today it shows in / out / net
+   — `src/lib/receipts/statementMath.ts`), and the ₹40,000 demo credit can get an opening
+   ledger entry.
+2. Also P3 (found in the P1 UI check): in `testnet` mode the wallet card still shows the
+   ₹40,000 demo credit; CL-08 "Next phase funding due" lists a phase whose predecessor
    isn't released yet.
-3. Local test data: an earlier test hire `cmuq7pidl0001fmxcofn2a0cc` was funded on a chain
-   that was later restarted, so its phase 1 is DB-ahead of the chain (VERIFICATION_WINDOW_OPEN
-   in the DB, nothing on-chain). The reconciler deliberately ignores DB-ahead drift; delete
-   that test hire or reset the local DB before relying on cron auto-release locally.
+3. Local test data: hire `cmuq7pidl0001fmxcofn2a0cc` was funded on a chain that was later
+   restarted, so its phase 1 is DB-ahead of the chain (approving it now fails — which is
+   how the CW-FAIL receipt path was tested). Delete it or reset the local DB before relying
+   on cron auto-release locally.
 4. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
-   `phase_reconcile_cursor`), then run the backfill script against Neon.
+   `phase_reconcile_cursor`, `receipts`), then `npm run script -- scripts/backfill-payments.mts`
+   against Neon (it now also issues the receipts). Set `APP_BASE_URL` to the public URL so
+   receipt QR codes point at the live verify page.

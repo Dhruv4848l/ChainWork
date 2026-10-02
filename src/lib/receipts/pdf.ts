@@ -103,8 +103,9 @@ export async function renderReceiptPdf({ content: c, contentHash, verifyUrl }: R
     y += 14;
     p.text(label.toUpperCase(), M, y, 7, C.ink3, true, 0.6);
     y += 14;
-    p.text(party ?? "ChainWork", M, y, 11, C.ink, true);
-    for (const l of p.wrap(addr ?? "—", 8, W - 2 * M)) {
+    // No account on this side (a bank / UPI off- or on-ramp): show the destination itself.
+    p.text(party ?? addr ?? "—", M, y, 11, C.ink, true);
+    for (const l of party ? p.wrap(addr ?? "—", 8, W - 2 * M) : []) {
       y += 11;
       p.text(l, M, y, 8, C.ink2);
     }
