@@ -14,6 +14,7 @@ import { observeChainTx, type MinedTx } from "./observer";
 import { PHASE_TRANSITIONS, type PhaseEvent } from "@/lib/escrow/phaseMachine";
 import { CHAIN_ID, ESCROW_ADDRESS } from "@/lib/chain/config";
 import { toTokenUnits } from "@/lib/chain/viemAdapter";
+import { issueReceipt } from "@/lib/receipts/issue";
 import type { TxHash } from "@/lib/chain/types";
 
 /*
@@ -25,7 +26,8 @@ import type { TxHash } from "@/lib/chain/types";
        broadcast (SUBMITTED), via the observer in ./observer.ts.
     3. Success → ONE DB transaction marks it CONFIRMED and applies its money effects:
        the guarded phase transition, the ledger rows and the legacy EscrowTransaction
-       row. Failure → FAILED / CANCELLED with a code and a plain-language reason.
+       row, and issues the receipt (P2). Failure → FAILED / CANCELLED with a code, a
+       plain-language reason and a failure receipt, also in one DB transaction.
        A timeout after broadcast leaves it SUBMITTED: the reconciler finishes it.
     4. Optional after-commit work (notifications, hire completion) runs best-effort.
 
@@ -211,23 +213,29 @@ export async function confirmPayment(
     const payment = await tx.paymentTransaction.findUniqueOrThrow({ where: { id: paymentId } });
     await applyMoneyEffects(tx, payment);
     if (opts.onConfirmedTx) await opts.onConfirmedTx(tx, payment);
+    await issueReceipt(tx, payment);
     return payment;
   }, { timeout: 20_000 });
 }
 
+/** Mark FAILED / CANCELLED and issue its (failure) receipt atomically. Idempotent. */
 export async function failPayment(
   paymentId: string,
   f: { code: string; reason: string; cancelled?: boolean; reconciled?: boolean },
 ): Promise<void> {
-  await platformDb.paymentTransaction.updateMany({
-    where: { id: paymentId, status: { in: ["INITIATED", "SUBMITTED"] } },
-    data: {
-      status: f.cancelled ? "CANCELLED" : "FAILED",
-      failureCode: f.code,
-      failureReason: f.reason,
-      finalizedAt: new Date(),
-      reconciled: f.reconciled ?? false,
-    },
+  await platformDb.$transaction(async (tx) => {
+    const res = await tx.paymentTransaction.updateMany({
+      where: { id: paymentId, status: { in: ["INITIATED", "SUBMITTED"] } },
+      data: {
+        status: f.cancelled ? "CANCELLED" : "FAILED",
+        failureCode: f.code,
+        failureReason: f.reason,
+        finalizedAt: new Date(),
+        reconciled: f.reconciled ?? false,
+      },
+    });
+    if (res.count !== 1) return; // already final
+    await issueReceipt(tx, await tx.paymentTransaction.findUniqueOrThrow({ where: { id: paymentId } }));
   });
 }
 

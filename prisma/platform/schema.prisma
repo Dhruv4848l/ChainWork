@@ -713,7 +713,8 @@ model PaymentTransaction {
   finalizedAt   DateTime?
   updatedAt     DateTime      @updatedAt
 
-  ledger LedgerEntry[]
+  ledger  LedgerEntry[]
+  receipt Receipt?
 
   @@index([payerUserId, initiatedAt])
   @@index([payeeUserId, initiatedAt])
@@ -729,6 +730,36 @@ enum LedgerBucket {
 enum LedgerDirection {
   DEBIT
   CREDIT
+}
+
+// ---------------------------------------------------------------------------
+// Receipts (payment plan P2) — one per payment, issued when it reaches a final
+// state (success AND failure). `content` is the frozen snapshot the PDF and the
+// public verify page render from; `contentHash` = SHA-256 of its canonical JSON.
+// ---------------------------------------------------------------------------
+
+enum ReceiptOutcome {
+  SUCCESS
+  FAILED
+}
+
+model Receipt {
+  id          String             @id @default(cuid())
+  /// CW-RCPT-2026-000123 (success) or CW-FAIL-2026-000045 (failed / cancelled).
+  receiptNo   String             @unique
+  paymentId   String             @unique
+  payment     PaymentTransaction @relation(fields: [paymentId], references: [id])
+  outcome     ReceiptOutcome
+  content     Json
+  contentHash String
+  issuedAt    DateTime           @default(now())
+}
+
+/// Gap-free yearly counters for receipt numbers, keyed "RCPT-2026" / "FAIL-2026".
+/// Incremented inside the issuing transaction, so a rollback never burns a number.
+model ReceiptSequence {
+  key  String @id
+  last Int    @default(0)
 }
 
 /// Double-entry-style movement rows, written in the same DB transaction that marks a

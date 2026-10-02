@@ -2,6 +2,7 @@ import "server-only";
 import { platformDb } from "@/lib/platformDb";
 import type { EscrowTxType, PaymentKind, PaymentMode } from "@/generated/platform";
 import { ledgerRows } from "./service";
+import { issueReceipt } from "@/lib/receipts/issue";
 
 /*
   One-off (idempotent) backfill: every EscrowTransaction written before the payment
@@ -65,4 +66,21 @@ export async function backfillPaymentsFromEscrowTransactions(): Promise<{ create
     created++;
   }
   return { created, skipped };
+}
+
+/**
+ * Issue receipts (P2) for every final payment that has none — payments finalised
+ * before receipts existed, plus everything the escrow backfill above just created.
+ * Oldest first, so historical numbers follow the order the payments happened in.
+ * Idempotent: payments that already have a receipt are skipped.
+ */
+export async function backfillReceipts(): Promise<{ issued: number }> {
+  const payments = await platformDb.paymentTransaction.findMany({
+    where: { status: { in: ["CONFIRMED", "FAILED", "CANCELLED", "EXPIRED"] }, receipt: null },
+    orderBy: [{ finalizedAt: "asc" }, { initiatedAt: "asc" }],
+  });
+  for (const p of payments) {
+    await platformDb.$transaction((tx) => issueReceipt(tx, p));
+  }
+  return { issued: payments.length };
 }
