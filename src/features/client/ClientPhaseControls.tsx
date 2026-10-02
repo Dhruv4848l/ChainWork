@@ -6,6 +6,7 @@ import { fundPhaseAction, approvePhaseAction, requestChangesAction } from "./act
 import { ForgeComplete } from "@/features/shared/ForgeComplete";
 import { formatInr } from "@/lib/format";
 import { AddFundsForm } from "@/features/wallet/AddFundsForm";
+import { PaymentTracker } from "@/features/shared/PaymentTracker";
 
 /*
   CL-07 client-side phase controls (real escrow actions since Phase 7):
@@ -30,18 +31,25 @@ export function ClientPhaseControls({
   const [msg, setMsg] = useState<string | null>(null);
   const [receiptNo, setReceiptNo] = useState<string | null>(null);
   const [shortfall, setShortfall] = useState<number | null>(null);
+  const [trackId, setTrackId] = useState<string | null>(null);
   const [forge, setForge] = useState(false);
   const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean; receiptNo?: string | null; code?: string; shortfallInr?: number }>) =>
+  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean; receiptNo?: string | null; code?: string; shortfallInr?: number; pending?: boolean; paymentId?: string }>) =>
     start(async () => {
       const r = await fn();
       setMsg(r.message ?? r.error ?? null);
       setReceiptNo(r.receiptNo ?? null);
       setShortfall(r.code === "INSUFFICIENT_BALANCE" ? r.shortfallInr ?? null : null);
+      setTrackId(r.pending && r.paymentId ? r.paymentId : null);
       if (r.released) setForge(true);
     });
   // Failed money attempts are recorded with a receipt too (payment plan P2) — offer it.
-  const note = msg && (
+  // Sent but not confirmed yet: follow it live instead of showing an error (P5.3).
+  const note = trackId ? (
+    <p className="mt-1.5 w-full text-xs text-ink3">
+      Sent to the network — <PaymentTracker paymentId={trackId} />
+    </p>
+  ) : msg && (
     <p className="mt-1.5 w-full text-xs text-ink3">
       {msg}
       {receiptNo && (

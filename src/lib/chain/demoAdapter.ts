@@ -316,6 +316,10 @@ export const demoAdapter: ChainAdapter = {
   async txReceipt() {
     return null;
   },
+
+  async blockNumber() {
+    return null;
+  },
 };
 
 /** Demo-only: the locked (non-withdrawable) part of an address's balance, in ₹. */

@@ -4,7 +4,7 @@ import { createContext, useContext, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, cookieToInitialState } from "wagmi";
 import type { PublicChainInfo } from "@/lib/chain/publicChain";
-import { makeWagmiConfig } from "./wagmiConfig";
+import { getWagmiConfig } from "./wagmiConfig";
 
 /*
   Wallet context for the worker / client dashboards only (payment plan P4.1 — the public
@@ -21,7 +21,7 @@ export function useChainInfo(): PublicChainInfo {
 }
 
 export function WalletProvider({ chain, cookie, children }: { chain: PublicChainInfo; cookie: string | null; children: React.ReactNode }) {
-  const [config] = useState(() => makeWagmiConfig(chain));
+  const [config] = useState(() => getWagmiConfig(chain));
   const [queryClient] = useState(() => new QueryClient());
   const initialState = cookieToInitialState(config, cookie);
   return (

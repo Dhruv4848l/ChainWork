@@ -205,6 +205,10 @@ export const viemAdapter: ChainAdapter = {
     return write(account, { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [to, amount] }, true);
   },
 
+  async blockNumber() {
+    return publicClient.getBlockNumber();
+  },
+
   async txReceipt(hash) {
     try {
       const r = await publicClient.getTransactionReceipt({ hash });

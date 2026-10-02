@@ -54,3 +54,19 @@ export function makeWagmiConfig(info: PublicChainInfo) {
 }
 
 export type ChainWorkWagmiConfig = ReturnType<typeof makeWagmiConfig>;
+
+/*
+  ONE config per page lifetime (per chain id). Creating a config sets up its connectors —
+  WalletConnect opens a relay connection — so it must not be rebuilt on every mount
+  (React dev double-invokes initialisers; layouts remount on navigation).
+*/
+const configs = new Map<string, ChainWorkWagmiConfig>();
+export function getWagmiConfig(info: PublicChainInfo): ChainWorkWagmiConfig {
+  const key = `${info.id}|${info.walletConnectProjectId ?? ""}|${info.rpcUrl}`;
+  let c = configs.get(key);
+  if (!c) {
+    c = makeWagmiConfig(info);
+    if (typeof window !== "undefined") configs.set(key, c); // never share a config across server requests
+  }
+  return c;
+}

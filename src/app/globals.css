@@ -242,3 +242,9 @@ body {
   background-size: 200% 100%;
   animation: cwShimmer 1.4s ease-in-out infinite;
 }
+
+/* WalletTicker (payment plan P5.4): icon crossfade, and the whole swap for reduced motion. */
+@keyframes cwTickerFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

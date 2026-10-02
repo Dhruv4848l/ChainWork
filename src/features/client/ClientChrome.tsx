@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ThemeToggle } from "@/components/ui";
+import { TopBarTicker } from "@/features/wallet/ticker/LiveWallet";
 import { logoutAction } from "@/features/auth/actions";
 import { formatInr } from "@/lib/format";
 import { ToastProvider } from "@/features/shared/Toast";
@@ -101,6 +102,7 @@ export function ClientChrome({
             className="hidden max-w-md flex-1 rounded-full border border-line bg-card px-4 py-2.5 text-[13.5px] text-ink placeholder:text-ink3 focus:border-bronze focus:outline-none sm:block"
           />
           <div className="ml-auto flex items-center gap-3">
+            <TopBarTicker />
             <Link
               href="/dashboard/client/post-job"
               className="rounded-full bg-bronze px-5 py-2.5 text-[13px] font-semibold text-[#1a1512] hover:bg-bronze-hover"

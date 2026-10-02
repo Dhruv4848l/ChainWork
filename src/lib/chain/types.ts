@@ -52,6 +52,8 @@ export interface ChainAdapter {
   // ---- reconciliation ----
   /** The mined receipt of `hash`; null if unknown / not mined (always null in demo mode). */
   txReceipt(hash: TxHash): Promise<TxReceiptView | null>;
+  /** Latest block number (for confirmation counts — P5.3); null in demo mode. */
+  blockNumber(): Promise<bigint | null>;
 }
 
 export interface TxReceiptView {

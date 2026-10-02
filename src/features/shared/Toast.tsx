@@ -10,9 +10,11 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 */
 
 type Tone = "success" | "error" | "info";
-type Toast = { id: number; message: string; tone: Tone };
+/** Optional link shown in the toast, e.g. "Download receipt" (payment plan P5.3). */
+type ToastAction = { label: string; href: string };
+type Toast = { id: number; message: string; tone: Tone; action?: ToastAction };
 
-const ToastContext = createContext<(message: string, tone?: Tone) => void>(() => {});
+const ToastContext = createContext<(message: string, tone?: Tone, action?: ToastAction) => void>(() => {});
 
 export function useToast() {
   return useContext(ToastContext);
@@ -24,9 +26,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
-  const toast = useCallback((message: string, tone: Tone = "success") => {
+  const toast = useCallback((message: string, tone: Tone = "success", action?: ToastAction) => {
     const id = ++seq;
-    setToasts((t) => [...t, { id, message, tone }]);
+    setToasts((t) => [...t, { id, message, tone, action }]);
   }, []);
 
   return (
@@ -43,21 +45,35 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
   useEffect(() => {
-    const t = setTimeout(onDismiss, 4000);
+    // A toast with a link stays long enough to use it.
+    const t = setTimeout(onDismiss, toast.action ? 9000 : 4000);
     return () => clearTimeout(t);
-  }, [onDismiss]);
+  }, [onDismiss, toast.action]);
 
   const accent =
     toast.tone === "error" ? "border-ember/50 bg-ember/[0.10]" : toast.tone === "info" ? "border-line-strong bg-card" : "border-emerald/45 bg-emerald/[0.10]";
   const dot = toast.tone === "error" ? "bg-ember" : toast.tone === "info" ? "bg-bronze" : "bg-emerald";
 
   return (
-    <button
-      onClick={onDismiss}
+    <div
+      role="status"
       className={`pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border px-4 py-3 text-left shadow-lg backdrop-blur-sm animate-[cwToastIn_0.22s_ease-out] ${accent}`}
     >
       <span className={`mt-1.5 h-1.5 w-1.5 flex-shrink-0 rounded-full ${dot}`} />
-      <span className="text-[13px] leading-snug text-ink">{toast.message}</span>
-    </button>
+      <span className="flex-1 text-[13px] leading-snug text-ink">
+        {toast.message}
+        {toast.action && (
+          <>
+            {" "}
+            <a href={toast.action.href} className="font-semibold text-bronze hover:underline">
+              {toast.action.label}
+            </a>
+          </>
+        )}
+      </span>
+      <button onClick={onDismiss} aria-label="Dismiss" className="text-xs text-ink3 hover:text-ink">
+        ✕
+      </button>
+    </div>
   );
 }

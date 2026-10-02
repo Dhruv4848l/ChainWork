@@ -9,6 +9,8 @@ import { FundDueButton } from "@/features/client/FundDueButton";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { LiveWalletCard } from "@/features/wallet/ticker/LiveWallet";
+import { PendingPayments } from "@/features/shared/PendingPayments";
 import { WalletAddresses, walletSub } from "@/features/wallet/WalletBreakdown";
 import { TransactionsCard } from "@/features/shared/TransactionsCard";
 import { getPaymentHistory } from "@/features/shared/paymentHistory";
@@ -27,6 +29,8 @@ export default async function ClientPaymentsPage() {
     <div>
       <PageTitle action={<AddFundsButton />}>Payments &amp; Escrow</PageTitle>
       <PaymentModeBanner />
+      <PendingPayments userId={user.id} />
+      <LiveWalletCard linkedAddress={wallet.externalAddress} />
 
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
         <StatCard
