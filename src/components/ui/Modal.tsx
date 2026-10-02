@@ -18,10 +18,12 @@ export interface ModalProps {
   open: boolean;
   onClose: () => void;
   title?: string;
+  /** "lg" for content-heavy dialogs (e.g. the payment window). */
+  size?: "md" | "lg";
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, title, children }: ModalProps) {
+export function Modal({ open, onClose, title, size = "md", children }: ModalProps) {
   // Close on Escape + prevent the page behind from scrolling while open.
   useEffect(() => {
     if (!open) return;
@@ -50,7 +52,7 @@ export function Modal({ open, onClose, title, children }: ModalProps) {
       {/* stopPropagation so clicking inside the panel doesn't close the modal */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-2xl border border-line bg-card p-6 shadow-2xl"
+        className={`max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-2xl border border-line bg-card p-6 shadow-2xl ${size === "lg" ? "max-w-2xl" : "max-w-lg"}`}
       >
         {title && (
           <h2 className="mb-4 font-display text-2xl text-ink">{title}</h2>

@@ -348,7 +348,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | ✅ Done (2026-10-02) |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | ✅ Done (2026-10-02) — WalletConnect needs a project id |
 | P5 | Live wallet tracker + rolling ticker | ✅ Done (2026-10-02) |
-| P6 | Multi-crypto payment window (PhaseEscrow v2) | — |
+| P6 | Multi-crypto payment window (PhaseEscrow v2) | ✅ Done (2026-10-02) — Polygon set (6a); Amoy redeploy is a user step |
 | P7 | Hardening, E2E tests, "turn off demo money" runbook | — |
 
 **P0 — what changed**
@@ -488,15 +488,56 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 - **Testing note:** the in-app browser pane doesn't run animation frames while it's hidden,
   so pages don't hydrate there; P5 was verified with Playwright on the cached Chromium.
 
+**P6 — what changed (done 2026-10-02)**
+- **PhaseEscrow v2** (`contracts/contracts/PhaseEscrow.sol`): allowlisted assets (ERC-20 +
+  the native coin as `address(0)`), `fundPhaseWith` / `fundPhaseNative`, every exit pays out
+  in the asset the phase was funded in, fee-on-transfer tokens refused. 41 contract tests.
+  Local deploy adds test USDT / USDC (6 dp) and allowlists them + native.
+- **Quotes** (`src/lib/payments/quotes.ts`, `quoteMath.ts`, `escrowAssets.ts`, model
+  `PaymentQuote`): ₹ → asset at a CoinGecko rate (fixed table in demo), held 5 minutes,
+  rounded up, 1 % tolerance. Crypto other than cwINR only when the worker is paid to their
+  own linked wallet (a ChainWork wallet holds rupees).
+- **Shared funding gates** `src/lib/escrow/fundGates.ts` (owner, status, signatures, stake,
+  sequential) — used by `fundPhaseAction` and the payment window alike.
+- **Verified wallet payments** — `recordVerifiedPayment` (service.ts) + `verifyPhaseFunding`
+  (`src/lib/chain/verifyFunding.ts`): the payer's own transaction is recorded, then checked
+  (our contract's `PhaseFunded`, phase, worker, asset, amount) before the phase, ledger and
+  receipt move. Replays, wrong worker / phase / asset, underpayment and unrelated txs are
+  refused with a failed receipt. The reconciler re-verifies stale wallet payments and won't
+  adopt an escrow that names someone else's address.
+- **Demo mode**: an EIP-712 `PaymentAuthorization` (`src/lib/payments/demoAuth.ts`) signed in
+  the wallet, verified server-side, then demo credit moves into escrow.
+- **Payment window** `src/features/client/checkout/CheckoutModal.tsx` (+ `AddressCard`),
+  opened from Fund Phase on CL-07: amount due, currency cards with ChainWork + wallet
+  balances, pay-from choice for cwINR, recipient card (worker payout address, copy, QR,
+  escrow contract), quote with countdown and refresh, approve-if-needed + fund in the
+  wallet, result with receipt or the live tracker. Server actions in
+  `src/features/client/checkoutActions.ts`.
+- **Verified:** scripted against the local chain — 13 testnet cases + 6 demo-mode cases (see
+  the stage-3 commit). In headless Chromium with an injected EIP-6963 test wallet (Hardhat
+  #18): USDT payment end to end (allowance reset → approve → `fundPhaseWith` → server
+  verification → receipt), ChainWork-wallet payment after an in-window top-up, 375 px
+  layout with no horizontal scroll. 79 unit tests; production build passes.
+- **Not yet exercised in a browser:** the demo-mode signature path (server side is
+  verified) and native-coin payment through the UI (server side is verified).
+
 **Resume here**
-1. Start **P6 — multi-crypto payment window** (PhaseEscrow v2 with allowlisted ERC-20 +
-   native assets, QuoteService with a 5-min price lock, the checkout modal, demo-mode EIP-712
-   authorisations, server-side verification of on-chain funding). The contract part (6.1)
-   needs a redeploy to Amoy afterwards — a user step with the deployer key.
-2. Local dev: the Hardhat chain loses all state on restart (balances, escrows). Consider
+1. **Amoy (user step):** redeploy PhaseEscrow v2 with the deployer key
+   (`cd contracts && npm run deploy:amoy`), grant the relayer
+   (`RELAYER_ADDRESS=0x… npx hardhat run scripts/grant-roles.js --network amoy`), allowlist
+   real Amoy test USDT / USDC if you want them (`setAssetAllowed`), then set
+   `CHAIN_ESCROW_ADDRESS`, `CHAIN_USDT_ADDRESS`, `CHAIN_USDC_ADDRESS` on Vercel. Run
+   `npm run db:deploy` for the `payment_quote` migration first. Phases funded on the v1
+   contract stay on v1 — finish or refund them before switching the address.
+2. P6 left for later: Sepolia / BNB testnet asset sets (6.6b/c), a network-fee estimate in
+   the quote, the dashboard's "Fund ₹X" shortcut (`FundDueButton`) still pays from the
+   ChainWork wallet directly instead of opening the window.
+3. **P7** — hardening, E2E suite (the Playwright + injected-wallet harness used for P6 is
+   the starting point), "turn off demo money" runbook.
+4. Local dev: the Hardhat chain loses all state on restart (balances, escrows). Consider
    switching the local node to anvil `--state` (persists) — or re-seed after restarts.
-3. Statement wallet section still in / out / net (P3 note).
-4. Before deploying to Neon/Vercel: `npm run db:deploy` (migrations `demo_chain`,
-   `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`), run
+5. Statement wallet section still in / out / net (P3 note).
+6. Before deploying to Neon/Vercel: `npm run db:deploy` (migrations `demo_chain`,
+   `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`, `payment_quote`), run
    `scripts/backfill-payments.mts`, set `APP_BASE_URL`, `NEXT_PUBLIC_WC_PROJECT_ID`, optionally
    `ALCHEMY_API_KEY` / `COINGECKO_API_KEY`, and add the `delivery_stake_pct` config row.

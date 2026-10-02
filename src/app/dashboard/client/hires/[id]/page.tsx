@@ -67,7 +67,9 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
     if (showControls || receipts[p.id] || payouts[p.id]) {
       actionsByPhase[p.id] = (
         <>
-          {showControls && controls}
+          {/* Always mounted (renders nothing without controls) so an open payment
+              window survives the phase changing status under it. */}
+          {controls}
           <PhasePayoutLine payout={payouts[p.id]} />
           <PhaseReceiptLinks links={receipts[p.id]} />
         </>

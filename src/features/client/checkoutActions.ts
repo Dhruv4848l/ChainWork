@@ -8,6 +8,10 @@ import { platformDb } from "@/lib/platformDb";
 import * as chain from "@/lib/chain/escrow";
 import { verifyPhaseFunding } from "@/lib/chain/verifyFunding";
 import { publicChainInfo } from "@/lib/chain/publicChain";
+import { ESCROW_ADDRESS } from "@/lib/chain/config";
+import { payoutAddressFor } from "@/lib/chain/payout";
+import { getWalletSummary } from "@/lib/chain/wallet";
+import { escrowAssets } from "@/lib/payments/escrowAssets";
 import { fundingBlocker, loadFundablePhase } from "@/lib/escrow/fundGates";
 import { paymentMode } from "@/lib/payments/mode";
 import { createQuote, getQuote, quoteView, type QuoteView } from "@/lib/payments/quotes";
@@ -133,4 +137,64 @@ export async function authorizeDemoPaymentAction(quoteId: string, signer: string
   revalidatePath(`/dashboard/client/hires/${s.phase.hireId}`);
   revalidatePath("/dashboard/client/payments");
   return outcome(res);
+}
+
+export interface CheckoutAssetView {
+  key: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  /** null = native coin. */
+  address: string | null;
+  icon: string;
+  /** Payable from the ChainWork (custodial) wallet. */
+  custodialPayable: boolean;
+  /** Why it can't be chosen for this phase, or null. */
+  unavailable: string | null;
+}
+
+export interface CheckoutContext {
+  phaseId: string;
+  phaseName: string;
+  hireId: string;
+  amountInr: number;
+  workerName: string;
+  /** Where the escrow will release to (the worker's payout address). */
+  workerAddress: string;
+  workerPaidToOwnWallet: boolean;
+  escrowAddress: string | null;
+  mode: "demo" | "testnet" | "mainnet";
+  assets: CheckoutAssetView[];
+  chainworkWallet: { address: string; spendableInr: number; demoCreditInr: number; live: boolean };
+}
+
+/** Everything the payment window shows before a quote: the phase, recipient and currencies. */
+export async function checkoutContextAction(phaseId: string): Promise<{ ok: true; ctx: CheckoutContext } | { ok: false; error: string }> {
+  const user = await requireRole("CLIENT");
+  const phase = await loadFundablePhase(phaseId);
+  const blocker = await fundingBlocker(phase, user.id);
+  if (blocker || !phase) return { ok: false, error: blocker ?? "Phase not found." };
+
+  const [workerAddress, workerWallet, mine] = await Promise.all([
+    payoutAddressFor(phase.hire.workerId),
+    platformDb.wallet.findUnique({ where: { userId: phase.hire.workerId }, select: { custodialAddress: true } }),
+    getWalletSummary(user.id),
+  ]);
+  const ownWallet = !!workerWallet && workerWallet.custodialAddress.toLowerCase() !== workerAddress.toLowerCase();
+  const mode = paymentMode();
+  return {
+    ok: true,
+    ctx: {
+      phaseId: phase.id, phaseName: phase.name, hireId: phase.hireId, amountInr: Number(phase.amount),
+      workerName: phase.hire.worker.name, workerAddress, workerPaidToOwnWallet: ownWallet,
+      escrowAddress: mode === "demo" ? null : ESCROW_ADDRESS,
+      mode,
+      assets: escrowAssets().map((a) => ({
+        key: a.key, symbol: a.symbol, name: a.name, decimals: a.decimals, address: a.address, icon: a.icon,
+        custodialPayable: a.custodialPayable,
+        unavailable: a.key === "cwINR" || ownWallet ? null : `${phase.hire.worker.name} is paid into their ChainWork wallet, which holds rupees. Other currencies open once they link their own wallet.`,
+      })),
+      chainworkWallet: { address: mine.custodialAddress, spendableInr: mine.spendableInr, demoCreditInr: mine.demoCreditInr, live: mine.live },
+    },
+  };
 }

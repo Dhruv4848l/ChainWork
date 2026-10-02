@@ -15,10 +15,13 @@ export function AddFundsForm({
   defaultAmount = 10000,
   label = "Add funds",
   hint,
+  onAdded,
 }: {
   defaultAmount?: number;
   label?: string;
   hint?: string;
+  /** Called after a successful top-up (e.g. the payment window reloads its balance). */
+  onAdded?: () => void;
 }) {
   const router = useRouter();
   const [amount, setAmount] = useState(String(defaultAmount));
@@ -30,7 +33,10 @@ export function AddFundsForm({
     start(async () => {
       const r = await addFundsAction(Number(amount));
       setMsg({ text: r.message ?? r.error ?? "", ok: !r.error });
-      if (!r.error) router.refresh();
+      if (!r.error) {
+        router.refresh();
+        onAdded?.();
+      }
     });
   };
 

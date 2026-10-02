@@ -613,6 +613,14 @@ Three gaps between the built product and the story we demo were closed here.
   in `src/features/wallet/ticker/`. In-flight payments: `PaymentTracker` / `PendingPayments`
   (`src/features/shared/`). Verify animated / client UI with headless Playwright when the
   in-app pane is hidden (it pauses requestAnimationFrame, so pages don't hydrate there).
+- **Multi-asset escrow (P6):** PhaseEscrow v2 takes allowlisted ERC-20s + the native coin;
+  exits pay in the funding asset. Assets the app offers: `src/lib/payments/escrowAssets.ts`;
+  prices: `quotes.ts` (5-min lock, 1 % tolerance). A payment the payer sends from their OWN
+  wallet is never trusted from the browser — record it with `recordVerifiedPayment()` +
+  `verifyPhaseFunding()` (checks the mined `PhaseFunded` event). Funding rules live in
+  `src/lib/escrow/fundGates.ts` — every funding path calls `fundingBlocker()`. The payment
+  window is `src/features/client/checkout/`; it must stay mounted while open (the page
+  re-renders the phase under it).
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)

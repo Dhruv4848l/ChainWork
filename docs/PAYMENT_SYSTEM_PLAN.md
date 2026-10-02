@@ -319,3 +319,13 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
   are display-only (never used to move money). The pending tracker shows n/12 confirmations
   for the user, while payments themselves still confirm at the first mined block (the
   reconciler covers reorg-free testnets; deeper finality is a P7 / pre-mainnet item).
+- **P6 (2026-10-02):** built 6a (Polygon set: cwINR, USDT, USDC, native POL — ETH on the
+  local chain); 6b/6c (Sepolia, BNB testnet) deferred. The contract keeps `fundPhase` for
+  cwINR and adds `fundPhaseWith(phaseId, worker, asset, amount)` rather than changing
+  `fundPhase`'s signature, so the custodial path is untouched. Stakes stay in cwINR. Paying
+  in crypto requires the worker to have a linked wallet past its safety hold (a ChainWork
+  wallet only holds rupees). The window shows each option's balance instead of greying out
+  unaffordable ones (a quote may still be wanted to see the price), and has no network-fee
+  estimate yet. A payment sent after its quote expired is still accepted if the mined amount
+  meets the quote: the money is already locked in escrow, refusing it would only strand it.
+  Payments confirm on the first mined block, as before.
