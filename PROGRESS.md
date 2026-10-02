@@ -345,7 +345,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | P0 | Foundations & safety — payment mode, chain adapters, key/role/gas guards, health check, mode banner | ✅ Done (2026-09-28) |
 | P1 | Payment ledger, transaction outbox, state machines, reconciler | ✅ Done (2026-10-02 — UI path verified) |
 | P2 | PDF receipts (success + failed) and statements | ✅ Done (2026-10-02) |
-| P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | — |
+| P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | ✅ Done (2026-10-02) |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | — |
 | P5 | Live wallet tracker + rolling ticker | — |
 | P6 | Multi-crypto payment window (PhaseEscrow v2) | — |
@@ -430,21 +430,43 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   receipts render correctly; party download 200, non-party / anonymous 404; verify page
   verdicts; statement 200 / 400 / 401; prod build traces the fonts for both PDF routes.
 
+**P3 — what changed (done 2026-10-02)**
+- **3.1 Real balance only (W2).** Funding a phase / locking a stake no longer mints a
+  shortfall: a short balance is refused *before* any transaction (CW-FAIL receipt, no gas),
+  and the UI offers **Add funds** prefilled with the exact gap. The amount-based on-ramp is
+  the only way money enters a wallet. Both adapters behave identically.
+- **3.2 Every balance separately (W3).** Spendable, withdrawable, demo credit (demo mode
+  only — the ₹40,000 no longer shows on testnet), linked-wallet balance, escrow as client,
+  held for you as worker. Top-bar chip fixed. "Next phase funding due" lists only fundable
+  phases.
+- **3.3 Move to my wallet** (custodial → verified external), receipted, withdrawable
+  balance only, after the link's safety hold.
+- **3.4 Per-phase payout target** on both hire pages (address recorded at funding).
+- **3.5 Secure linking (W5).** Server-built SIWE message (domain, chain, account,
+  single-use nonce, 10 min) + a one-time code to the phone/email on file + a 24 h hold before
+  new payouts use the address + SMS/email notice on link/unlink. Replaces the old flow,
+  which accepted any client-made message and linked instantly.
+- **3.6 Delivery stake on-chain (F5).** Contracts ≥ ₹10,000 need the worker's 10% stake
+  locked before funding; refunded on completion, forfeited to the client on ghosting — all
+  receipted payments.
+- **3.7 Gas.** Leftover sponsored gas is swept back to the relayer after a withdrawal
+  (skipped on the local chain).
+- **Verified:** 67 unit tests; browser runs for shortfall → add funds → fund, move to
+  wallet, stake lock with shortfall; DB/chain integration runs for wallet linking (13/13)
+  and the stake lifecycle (10/10).
+
 **Resume here**
-1. Start **P3 — wallet model rework** (docs/PAYMENT_SYSTEM_PLAN.md §3 P3). First item, 3.1:
-   funding must spend the real balance (no hidden mint in `fundPhase`; shortfall →
-   `INSUFFICIENT_BALANCE` → Add funds), so every wallet credit becomes a recorded TOPUP.
-   Then the statement can show a true wallet running balance (today it shows in / out / net
-   — `src/lib/receipts/statementMath.ts`), and the ₹40,000 demo credit can get an opening
-   ledger entry.
-2. Also P3 (found in the P1 UI check): in `testnet` mode the wallet card still shows the
-   ₹40,000 demo credit; CL-08 "Next phase funding due" lists a phase whose predecessor
-   isn't released yet.
-3. Local test data: hire `cmuq7pidl0001fmxcofn2a0cc` was funded on a chain that was later
-   restarted, so its phase 1 is DB-ahead of the chain (approving it now fails — which is
-   how the CW-FAIL receipt path was tested). Delete it or reset the local DB before relying
-   on cron auto-release locally.
-4. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
-   `phase_reconcile_cursor`, `receipts`), then `npm run script -- scripts/backfill-payments.mts`
-   against Neon (it now also issues the receipts). Set `APP_BASE_URL` to the public URL so
-   receipt QR codes point at the live verify page.
+1. Start **P4 — universal wallet connection** (wagmi + EIP-6963 picker + WalletConnect,
+   network switching, live account changes, wallet error messages, CSP). Needs a free
+   Reown/WalletConnect `projectId` from the user (`NEXT_PUBLIC_WC_PROJECT_ID`).
+   The SIWE link flow from P3.5 stays — P4 only replaces how the wallet is reached.
+2. Statement wallet section still shows in / out / net (history before P3.1 had implicit
+   mints and the demo grant has no ledger entry). An opening-balance entry per wallet would
+   allow a true running balance — small follow-up.
+3. Local test data from these checks: hires `cmuq7pidl…` (DB-ahead of the chain),
+   `cmuqkdi3g…` / `cmuqkfpxt…` (stake tests, signatures set directly), Ravi's linked test
+   wallet `0x5e6A…40a4` (hold backdated). `npm run db:reset` + the demo seed clears them.
+4. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`,
+   `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`), run
+   `scripts/backfill-payments.mts`, set `APP_BASE_URL` (receipt QR + SIWE domain), and add the
+   `delivery_stake_pct` PlatformConfig row (or re-seed config).

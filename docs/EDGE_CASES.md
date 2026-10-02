@@ -35,7 +35,7 @@ work deferred to the pre-mainnet checklist) · **⚪ Product/ops** (policy or hu
 | Scenario | Status | How / where |
 |---|---|---|
 | Worker no-show | ✅ | Contest window + evidence; the no-show flow flags the hire and routes to resolution. |
-| Worker misses a phase deadline & goes silent | ✅ | Escalating reminders → grace period → phase **auto-cancelled**, escrow rolled back to client, strike + **delivery-stake forfeiture** (`runEscrowTick`, verified on-chain in Phase 8). |
+| Worker misses a phase deadline & goes silent | ✅ | Escalating reminders → grace period → phase **auto-cancelled**, escrow rolled back to client, strike + **delivery-stake forfeiture on-chain to the client** (`runEscrowTick` → `forfeitDeliveryStake`, a receipted STAKE_FORFEIT payment since payment plan P3.6). |
 | Client silent during verification window | ✅ | **≤2 reminders**, then **auto-release** to the worker at window close — and the contract enforces the timing on-chain (`autoRelease` reverts before `releaseEligibleAfter`). Verified 0→₹3,000 in Phase 8. |
 | Client uses "Request Changes" to stall | ✅ | **Revision-round cap of 2** (`requestChangesAction`); further requests must become a formal complaint. |
 | Genuine quality/scope dispute | ✅ | Full **commit-reveal jury**, scoped to that phase's escrow only; escrow frozen on escalation (`raiseDispute`) (Phase 11). |
@@ -44,7 +44,7 @@ work deferred to the pre-mainnet checklist) · **⚪ Product/ops** (policy or hu
 | Wallet credential loss (custodial) | 🟡 | Custodial keys are re-derivable from the keystore in dev; production recovery needs the managed-custody provider (checklist). |
 | Regulatory / AML flag | ⚪ | Compliance hold-and-review is an admin/ops queue; AML provider integration is a checklist item. |
 | Smart-contract bug | ✅ | `Pausable` circuit-breaker (PAUSER role) + `ReentrancyGuard` + **no-drain guarantee** (31 contract tests, incl. a real reentrancy attack). Audited upgrade path is pre-mainnet. |
-| Worker delivery-stake shortfall | ✅ | Hire isn't confirmed until the stake is lockable; enforced in the stake flow. |
+| Worker delivery-stake shortfall | ✅ | Contracts ≥ `delivery_stake_threshold_inr` need the worker's stake (`delivery_stake_pct`, default 10%) locked on-chain before the client can fund; a short balance is refused with an Add-funds prompt for the exact gap (`src/lib/escrow/stake.ts`, P3.6). *(Before P3.6 this row overstated things: no stake was ever created.)* |
 
 ## Jury
 | Scenario | Status | How / where |

@@ -1,6 +1,6 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 · P1 · P2 done (2026-10-02) · next: P3 — see PROGRESS.md "Resume here"**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 · P1 · P2 · P3 done (2026-10-02) · next: P4 — see PROGRESS.md "Resume here"**_
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:
@@ -303,3 +303,9 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
   shows escrow as a running balance but the wallet only as in / out / net until P3.1 makes
   every wallet credit a recorded payment. Notifications name the receipt and link to the
   page that lists it (not to the PDF itself — the notification centre navigates in-app).
+- **P3 (2026-10-02):** the wallet-link one-time code lives on the `WalletLinkChallenge` row
+  (not VerificationToken) so nonce, message and code are consumed together. Legacy links
+  made before P3.5 (`externalLinkedAt` null) are treated as already past the hold. The
+  delivery stake is required at hire level and gates the first funding; its percentage is a
+  new PlatformConfig key `delivery_stake_pct` (default 10). Gas recovery runs after a
+  withdrawal only (a move-to-wallet may leave a balance that still needs gas).

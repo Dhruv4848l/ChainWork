@@ -597,6 +597,12 @@ Three gaps between the built product and the story we demo were closed here.
   `present.ts`). Admin reads go through `bridge.bridgeReceipt`. Statements:
   `statement.ts` / `statementMath.ts` (integer paise). Fonts come from `@fontsource` and are
   traced via `outputFileTracingIncludes` in next.config.ts.
+- **Wallets (P3):** funding/stakes spend the REAL balance only — never mint in an adapter
+  (`EscrowRuleError("InsufficientBalance")` before sending); the on-ramp (`addFundsAction`) is
+  the only mint. `getWalletSummary` returns every balance separately; demo credit exists
+  only in demo mode. External wallets link ONLY via `src/lib/wallet/link.ts` (SIWE + one-time
+  code + 24 h hold — `payoutAddressFor` honours the hold). Delivery stake:
+  `src/lib/escrow/stake.ts` (lock / refund / forfeit via `runPayment`).
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)
