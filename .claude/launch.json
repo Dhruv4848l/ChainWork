@@ -32,6 +32,21 @@
       "port": 3100
     },
     {
+      "name": "web-prod-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "start",
+        "-p",
+        "3101"
+      ],
+      "port": 3101,
+      "env": {
+        "PAYMENT_MODE": "demo",
+        "APP_BASE_URL": "http://localhost:3101"
+      }
+    },
+    {
       "name": "demo-serve",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

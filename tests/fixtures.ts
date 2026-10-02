@@ -12,7 +12,9 @@ import { provisionWallet } from "@/lib/chain/keystore";
 export const TEST_PASSWORD = "password123";
 
 const uid = () => Date.now().toString(36) + randomBytes(3).toString("hex");
-const phone = () => "7" + String(Math.floor(Math.random() * 1e9)).padStart(9, "0");
+// Safe to use against a live site: Indian mobiles start 6–9, so "50…" can never reach a real
+// phone, and example.com (RFC 2606) never receives mail.
+const phone = () => "50" + String(Math.floor(Math.random() * 1e8)).padStart(8, "0");
 
 export interface TestUser {
   id: string;
@@ -26,24 +28,26 @@ export interface TestUser {
  * A ready-to-use account: phone + email verified, onboarded, KYC VERIFIED (so the money
  * gate passes), with a provisioned custodial wallet. `externalAddress` links an own wallet;
  * `linkedHoursAgo` (default 48) places it past or inside the payout safety hold.
+ * `provision: false` skips the custodial wallet (for a deployed app with its own keys).
  */
 export async function makeUser(
   role: "CLIENT" | "WORKER",
-  opts: { name?: string; externalAddress?: string; linkedHoursAgo?: number } = {},
+  opts: { name?: string; externalAddress?: string; linkedHoursAgo?: number; provision?: boolean } = {},
 ): Promise<TestUser> {
   const id = uid();
   const p = phone();
   const name = opts.name ?? (role === "CLIENT" ? `Test Client ${id.slice(-4)}` : `Test Worker ${id.slice(-4)}`);
   const user = await db.user.create({
     data: {
-      role, name, email: `${role.toLowerCase()}-${id}@test.chainwork.dev`, phone: p,
+      role, name, email: `e2e-${role.toLowerCase()}-${id}@example.com`, phone: p,
       passwordHash: await bcrypt.hash(TEST_PASSWORD, 8),
       kycTier: "VERIFIED", emailVerified: true, phoneVerified: true, onboarded: true,
       ...(role === "CLIENT" ? { clientProfile: { create: {} } } : { workerProfile: { create: {} } }),
       wallet: { create: { custodialAddress: `pending-${id}` } },
     },
   });
-  const { address } = await provisionWallet(user.id);
+  // Remote runs leave provisioning to the deployed app (its own mnemonic derives the address).
+  const address = opts.provision === false ? ("" as `0x${string}`) : (await provisionWallet(user.id)).address;
   if (opts.externalAddress) {
     await db.wallet.update({
       where: { userId: user.id },

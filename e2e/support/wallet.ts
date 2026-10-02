@@ -1,18 +1,42 @@
 import type { BrowserContext, Page } from "@playwright/test";
-import { LOCAL_CHAIN_ID, PAYER } from "./accounts";
+import { privateKeyToAccount } from "viem/accounts";
+import { state as e2eState } from "./app";
 
 /*
   An injected EIP-1193 test wallet, announced over EIP-6963 as "Test Wallet" (payment plan
-  P7). Signing and sending are forwarded to the local Hardhat node, which holds the
-  accounts unlocked — so transactions and EIP-712 signatures are real. The page can be
-  steered like a user would steer their wallet: switch account, switch network, reject
-  the next request.
+  P7). The page can be steered like a user would steer their wallet: switch account,
+  switch network, reject the next request.
+
+  Local runs forward signing and sending to the Hardhat node, which holds the accounts
+  unlocked — transactions and EIP-712 signatures are real. Remote runs (a deployed site)
+  sign with this run's throwaway key right here in the test process; sending
+  transactions isn't supported there (demo mode only signs).
 */
 
 const RPC = process.env.CHAIN_RPC_URL ?? "http://127.0.0.1:8545";
 
-export async function installTestWallet(context: BrowserContext, opts: { account?: string; chainId?: number } = {}) {
+/** EIP-712 JSON from the page (uint256 as strings, EIP712Domain listed) → viem's shape. */
+function typedDataFromJson(json: string) {
+  const td = JSON.parse(json) as { domain: Record<string, unknown>; types: Record<string, { name: string; type: string }[]>; primaryType: string; message: Record<string, unknown> };
+  const types = Object.fromEntries(Object.entries(td.types).filter(([k]) => k !== "EIP712Domain"));
+  const message = { ...td.message };
+  for (const f of types[td.primaryType] ?? []) {
+    if (/^u?int\d*$/.test(f.type) && message[f.name] != null) message[f.name] = BigInt(message[f.name] as string);
+  }
+  const domain = { ...td.domain, ...(td.domain.chainId != null ? { chainId: Number(td.domain.chainId) } : {}) };
+  return { domain, types, primaryType: td.primaryType, message };
+}
+
+export async function installTestWallet(context: BrowserContext) {
+  const st = e2eState();
+  const signer = st.wallet.privateKey ? privateKeyToAccount(st.wallet.privateKey as `0x${string}`) : null;
+
   await context.exposeBinding("__testWalletRpc", async (_src, method: string, params: unknown[]) => {
+    if (signer) {
+      if (method === "eth_signTypedData_v4") return signer.signTypedData(typedDataFromJson(params[1] as string) as never);
+      if (method === "personal_sign") return signer.signMessage({ message: { raw: params[0] as `0x${string}` } });
+      throw Object.assign(new Error(`${method} isn't supported by the remote test wallet`), { code: 4200 });
+    }
     const res = await fetch(RPC, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -23,7 +47,7 @@ export async function installTestWallet(context: BrowserContext, opts: { account
   });
 
   await context.addInitScript(
-    ({ account, chainId, localChainId }) => {
+    ({ account, chainId, targetChainId }) => {
       const listeners: Record<string, ((v: unknown) => void)[]> = {};
       const emit = (ev: string, v: unknown) => (listeners[ev] ?? []).forEach((f) => f(v));
       // Like a real wallet: no accounts are exposed until the site asks and the user approves.
@@ -49,7 +73,7 @@ export async function installTestWallet(context: BrowserContext, opts: { account
               return String(state.chainId);
             case "wallet_switchEthereumChain": {
               const id = parseInt((params?.[0] as { chainId: string }).chainId, 16);
-              if (id !== localChainId) throw Object.assign(new Error("Unrecognized chain"), { code: 4902 });
+              if (id !== targetChainId) throw Object.assign(new Error("Unrecognized chain"), { code: 4902 });
               state.chainId = id;
               emit("chainChanged", hex(id));
               return null;
@@ -63,8 +87,8 @@ export async function installTestWallet(context: BrowserContext, opts: { account
             case "wallet_getPermissions":
               return state.authorized ? [{ parentCapability: "eth_accounts" }] : [];
             default:
-              // Reads and signing go to the node — only while on the chain it serves.
-              if (state.chainId !== localChainId && method !== "eth_blockNumber") {
+              // Reads and signing only while on the chain the site uses.
+              if (state.chainId !== targetChainId && method !== "eth_blockNumber") {
                 throw Object.assign(new Error("Chain mismatch"), { code: 4901 });
               }
               return (window as unknown as { __testWalletRpc: (m: string, p: unknown[]) => Promise<unknown> }).__testWalletRpc(method, params ?? []);
@@ -104,7 +128,7 @@ export async function installTestWallet(context: BrowserContext, opts: { account
       window.addEventListener("eip6963:requestProvider", announce);
       announce();
     },
-    { account: opts.account ?? PAYER, chainId: opts.chainId ?? LOCAL_CHAIN_ID, localChainId: LOCAL_CHAIN_ID },
+    { account: st.wallet.account, chainId: st.target.chainId, targetChainId: st.target.chainId },
   );
 }
 

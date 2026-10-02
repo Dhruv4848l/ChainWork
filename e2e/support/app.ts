@@ -3,6 +3,10 @@ import { expect, type Page } from "@playwright/test";
 
 /** The fixture accounts + hires made by global setup for this run. */
 export interface E2EState {
+  /** local = the two `next start` servers + Hardhat; remote = a deployed site (E2E_BASE_URL). */
+  target: { remote: boolean; mode: string; chainId: number };
+  /** The injected test wallet's accounts (privateKey only on remote runs — signs in-process). */
+  wallet: { account: string; other: string; privateKey: string | null };
   worker: { email: string; name: string };
   testnet: { client: { email: string }; stranger: { email: string }; hires: { wallet: string; pay: string; cancel: string; chainwork: string } };
   demo: { client: { email: string }; hires: { pay: string; expire: string } };
@@ -10,6 +14,9 @@ export interface E2EState {
 export const state = (): E2EState => JSON.parse(fs.readFileSync("e2e/.state.json", "utf8"));
 
 export const PASSWORD = "password123";
+
+/** How the payment window prints an address: 0xdD2F…44C0. */
+export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export async function login(page: Page, email: string) {
   await page.goto("/login");

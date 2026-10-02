@@ -627,7 +627,10 @@ Three gaps between the built product and the story we demo were closed here.
   from one build, testnet :3100 + demo :3101; injected EIP-6963 test wallet in
   `e2e/support/wallet.ts`). New tests make fresh users via `tests/fixtures.ts` — never mutate
   the seeded demo accounts. `PW_CHROMIUM=<chrome.exe>` reuses an installed Chromium. A money
-  bug fix gets a regression test in `tests/integration/`.
+  bug fix gets a regression test in `tests/integration/`. **Against a deployed site:**
+  `E2E_BASE_URL=https://… E2E_DATABASE_URL=<its platform DB> npm run test:e2e:remote` (wallet +
+  receipts specs, plus the demo spec in demo mode; fixtures use example.com emails and "50…"
+  phones so nothing reaches a real inbox/phone; `E2E_VERCEL_BYPASS` for protected previews).
 - **Demo capture:** `npm run build && npm run demo:serve` (production build + dev outbox,
   localhost only), then `npm run demo:capture`. Not the webpack dev server — it drops server
   actions mid-compile. Screenshot numbers are referenced by DEMO_WALKTHROUGH.md: don't add

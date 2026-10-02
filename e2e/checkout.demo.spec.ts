@@ -1,24 +1,49 @@
-import { expect, test } from "@playwright/test";
-import { downloadReceipt, login, openCheckout, payWithWallet, state } from "./support/app";
+import { expect, test, type Locator } from "@playwright/test";
+import { connectTestWallet, downloadReceipt, login, openCheckout, state } from "./support/app";
 import { installTestWallet, wallet } from "./support/wallet";
 import { runScript } from "./global-setup";
 
 /*
   The payment window in DEMO mode (P7): the wallet signs an EIP-712 authorisation — no
-  transaction, no gas — and demo credit moves into escrow.
+  transaction, no gas — and demo credit moves into escrow. Pays in the first crypto the
+  window offers (USDT where configured, otherwise the chain's native coin).
 */
 test.describe.configure({ mode: "serial" });
-test.beforeEach(async ({ context }) => installTestWallet(context));
+test.beforeEach(async ({ context }, info) => {
+  const t = state().target;
+  test.skip(info.project.name === "remote" && t.mode !== "demo", `the deployed site runs in ${t.mode} mode, not demo`);
+  await installTestWallet(context);
+});
 
-test("authorises a USDT payment with one signature and gets a receipt", async ({ page }) => {
+/** Choose the first crypto currency card that isn't greyed out; returns its symbol. */
+async function chooseCrypto(dialog: Locator): Promise<string> {
+  const cards = dialog.locator('section[aria-label="Currency"] button:not([disabled])');
+  const count = await cards.count();
+  for (let i = 0; i < count; i++) {
+    const symbol = ((await cards.nth(i).locator("span span").first().textContent()) ?? "").trim();
+    if (symbol && symbol !== "cwINR") {
+      await cards.nth(i).click();
+      return symbol;
+    }
+  }
+  throw new Error("The payment window offers no crypto option (only cwINR).");
+}
+
+async function quoted(dialog: Locator) {
+  const symbol = await chooseCrypto(dialog);
+  await connectTestWallet(dialog);
+  await dialog.getByRole("button", { name: `Get the price in ${symbol}` }).click();
+  await expect(dialog.getByText(/Price held for/)).toBeVisible();
+  return dialog.getByRole("button", { name: new RegExp(`^Authorise [\\d.,]+ ${symbol}$`) });
+}
+
+test("authorises a crypto payment with one signature and gets a receipt", async ({ page }) => {
   const s = state();
   await login(page, s.demo.client.email);
   const dialog = await openCheckout(page, s.demo.hires.pay);
   await expect(dialog.getByText("Demo money")).toBeVisible();
-  await payWithWallet(dialog, /Tether/);
-  await dialog.getByRole("button", { name: "Get the price in USDT" }).click();
-  await expect(dialog.getByText(/Price held for/)).toBeVisible();
-  await dialog.getByRole("button", { name: /^Authorise [\d.,]+ USDT$/ }).click();
+  const authorise = await quoted(dialog);
+  await authorise.click();
 
   await expect(dialog.getByText("Escrow funded")).toBeVisible({ timeout: 60_000 });
   const calls = await wallet.calls(page);
@@ -33,12 +58,10 @@ test("authorising after the price lock ran out fails, with a failed-payment rece
   const s = state();
   await login(page, s.demo.client.email);
   const dialog = await openCheckout(page, s.demo.hires.expire);
-  await payWithWallet(dialog, /Tether/);
-  await dialog.getByRole("button", { name: "Get the price in USDT" }).click();
-  await expect(dialog.getByText(/Price held for/)).toBeVisible();
+  const authorise = await quoted(dialog);
 
   runScript("e2e/support/expire-quote.mts", s.demo.hires.expire); // the 5 minutes pass
-  await dialog.getByRole("button", { name: /^Authorise [\d.,]+ USDT$/ }).click();
+  await authorise.click();
 
   await expect(dialog.getByText("The payment didn’t go through.")).toBeVisible();
   await expect(dialog.getByText(/price lock ran out/)).toBeVisible();

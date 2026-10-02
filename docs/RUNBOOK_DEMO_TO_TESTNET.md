@@ -135,6 +135,10 @@ Anything red: fix it, or roll back (`PAYMENT_MODE=demo`).
 6. `GET /api/health/chain` is still `ok`, and the cron tick log shows `reconcile` with no
    errors.
 
+7. Optionally run the browser suite against the live site (writes clearly-labelled test
+   accounts into the production DB):
+   `E2E_BASE_URL=https://<your-domain> E2E_DATABASE_URL=<neon platform direct url> npm run test:e2e:remote`
+
 Done: demo money is off. Keep `PAYMENT_MODE=demo` handy as the rollback.
 
 ## Reference
