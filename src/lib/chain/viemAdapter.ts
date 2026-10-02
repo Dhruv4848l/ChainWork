@@ -148,10 +148,12 @@ export const viemAdapter: ChainAdapter = {
   async readEscrow(phaseId): Promise<EscrowView> {
     const r = (await publicClient.readContract({
       address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "getEscrow", args: [keyFor(phaseId)],
-    })) as [string, string, bigint, number, bigint];
+    })) as [string, string, bigint, number, bigint, string];
+    const isStablecoin = r[5].toLowerCase() === TOKEN_ADDRESS.toLowerCase();
     return {
-      client: r[0], worker: r[1], amount: fromTokenUnits(r[2]),
+      client: r[0], worker: r[1], amount: isStablecoin ? fromTokenUnits(r[2]) : 0,
       status: ESCROW_STATUS_NAMES[r[3]] ?? "NONE", releaseEligibleAfter: Number(r[4]),
+      asset: r[5], amountRaw: r[2],
     };
   },
 

@@ -18,6 +18,9 @@ export const RELAYER_INDEX = Number(process.env.CHAIN_RELAYER_INDEX ?? "0");
 export const ESCROW_ADDRESS = (process.env.CHAIN_ESCROW_ADDRESS ?? "") as `0x${string}`;
 export const TOKEN_ADDRESS = (process.env.CHAIN_TOKEN_ADDRESS ?? "") as `0x${string}`;
 export const TOKEN_DECIMALS = 18;
+/** v2 (P6): extra allowlisted escrow assets on this chain (test tokens off mainnet). */
+export const USDT_ADDRESS = (process.env.CHAIN_USDT_ADDRESS ?? "") as `0x${string}` | "";
+export const USDC_ADDRESS = (process.env.CHAIN_USDC_ADDRESS ?? "") as `0x${string}` | "";
 
 export const chainConfigured = Boolean(ESCROW_ADDRESS && TOKEN_ADDRESS);
 

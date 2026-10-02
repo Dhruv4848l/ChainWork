@@ -27,6 +27,13 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
   - DISPUTE_ROLE       : freezes a phase and later executes the jury verdict split.
   - PAUSER_ROLE        : circuit breaker (pause fund movement if a bug is found).
 
+  ASSETS (v2, payment plan P6.1): a phase can be funded in any ALLOWLISTED asset — the
+  default stablecoin, another ERC-20 (e.g. USDT / USDC) or the chain's native coin
+  (`address(0)`, e.g. POL). Every exit — release, refund, verdict split, settlement —
+  pays out in the SAME asset the phase was funded with. Tokens that deliver less than the
+  amount transferred (fee-on-transfer / rebasing) are refused at funding, so the escrow
+  can never owe more than it holds. Delivery stakes stay in the default stablecoin.
+
   TRUST BOUNDARY (spec 13.7): `markDelivered` takes the release-eligible timestamp
   computed off-chain from the business-day calendar. The contract does NOT trust the
   attestor about *when* — it only lets `autoRelease` fire at/after that stored
@@ -60,6 +67,7 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
         uint256 amount;
         Status status;
         uint64 releaseEligibleAfter; // set on markDelivered; gate for autoRelease
+        address asset; // v2: what it was funded in; address(0) = native coin
     }
 
     struct Settlement {
@@ -86,8 +94,14 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
     mapping(bytes32 => Settlement) private _settlements; // phaseId => pending settlement
     mapping(bytes32 => Stake) private _stakes; // hireId => delivery stake
 
+    /// v2: assets a phase may be funded in. address(0) = the chain's native coin.
+    mapping(address => bool) public allowedAsset;
+
+    address public constant NATIVE = address(0);
+
     // ---- Events ----
-    event PhaseFunded(bytes32 indexed phaseId, address indexed client, address indexed worker, uint256 amount);
+    event PhaseFunded(bytes32 indexed phaseId, address indexed client, address indexed worker, address asset, uint256 amount);
+    event AssetAllowed(address indexed asset, bool allowed);
     event PhaseDelivered(bytes32 indexed phaseId, uint64 releaseEligibleAfter);
     event PhaseReleased(bytes32 indexed phaseId, address indexed worker, uint256 amount, string via);
     event PhaseDisputed(bytes32 indexed phaseId);
@@ -108,6 +122,9 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
     error InvalidBps();
     error NoSettlement();
     error CannotAcceptOwnProposal();
+    error AssetNotAllowed();
+    error AmountMismatch();
+    error NativeTransferFailed();
 
     constructor(IERC20 stablecoin, address admin) {
         if (address(stablecoin) == address(0) || admin == address(0)) revert ZeroAddress();
@@ -118,32 +135,79 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
         _grantRole(ATTESTOR_ROLE, admin);
         _grantRole(DISPUTE_ROLE, admin);
         _grantRole(PAUSER_ROLE, admin);
+        allowedAsset[address(stablecoin)] = true;
+        emit AssetAllowed(address(stablecoin), true);
+    }
+
+    /// v2: allow / disallow an asset for NEW fundings (already-funded phases are unaffected).
+    function setAssetAllowed(address asset, bool allowed) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        allowedAsset[asset] = allowed;
+        emit AssetAllowed(asset, allowed);
     }
 
     // ========================================================================
     // Funding
     // ========================================================================
 
-    /// The client funds a phase's advance. Pulls `amount` from msg.sender (client).
+    /// The client funds a phase's advance in the default stablecoin. Pulls from msg.sender.
     function fundPhase(bytes32 phaseId, address worker, uint256 amount)
         external
         nonReentrant
         whenNotPaused
     {
+        _fundToken(phaseId, worker, address(token), amount);
+    }
+
+    /// v2: fund a phase in another allowlisted ERC-20 (e.g. USDT). Pulls from msg.sender.
+    function fundPhaseWith(bytes32 phaseId, address worker, address asset, uint256 amount)
+        external
+        nonReentrant
+        whenNotPaused
+    {
+        if (asset == NATIVE) revert AssetNotAllowed(); // native goes through fundPhaseNative
+        _fundToken(phaseId, worker, asset, amount);
+    }
+
+    /// v2: fund a phase in the chain's native coin (msg.value).
+    function fundPhaseNative(bytes32 phaseId, address worker) external payable nonReentrant whenNotPaused {
+        if (!allowedAsset[NATIVE]) revert AssetNotAllowed();
+        _record(phaseId, worker, NATIVE, msg.value);
+        emit PhaseFunded(phaseId, msg.sender, worker, NATIVE, msg.value);
+    }
+
+    function _fundToken(bytes32 phaseId, address worker, address asset, uint256 amount) private {
+        if (!allowedAsset[asset]) revert AssetNotAllowed();
+        _record(phaseId, worker, asset, amount);
+        // interaction — and refuse tokens that deliver less than they claim (fee-on-transfer)
+        IERC20 t = IERC20(asset);
+        uint256 before = t.balanceOf(address(this));
+        t.safeTransferFrom(msg.sender, address(this), amount);
+        if (t.balanceOf(address(this)) - before != amount) revert AmountMismatch();
+        emit PhaseFunded(phaseId, msg.sender, worker, asset, amount);
+    }
+
+    /// Checks + effects shared by every funding path.
+    function _record(bytes32 phaseId, address worker, address asset, uint256 amount) private {
         if (amount == 0) revert InvalidAmount();
         if (worker == address(0)) revert ZeroAddress();
         Escrow storage e = _escrows[phaseId];
         if (e.status != Status.NONE) revert WrongStatus(); // no double-funding
-
-        // effects
         e.client = msg.sender;
         e.worker = worker;
         e.amount = amount;
         e.status = Status.FUNDED;
+        e.asset = asset;
+    }
 
-        // interaction
-        token.safeTransferFrom(msg.sender, address(this), amount);
-        emit PhaseFunded(phaseId, msg.sender, worker, amount);
+    /// Pay `amount` of `asset` out of escrow. Native transfers forward all gas, so this is
+    /// only ever reached after state is final and under nonReentrant.
+    function _pay(address asset, address to, uint256 amount) private {
+        if (asset == NATIVE) {
+            (bool ok, ) = payable(to).call{value: amount}("");
+            if (!ok) revert NativeTransferFailed();
+        } else {
+            IERC20(asset).safeTransfer(to, amount);
+        }
     }
 
     // ========================================================================
@@ -190,7 +254,7 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
         e.status = Status.RELEASED;
         e.amount = 0;
         // interaction
-        token.safeTransfer(worker, amount);
+        _pay(e.asset, worker, amount);
         emit PhaseReleased(phaseId, worker, amount, via);
     }
 
@@ -260,9 +324,10 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
         // effects
         e.status = Status.RESOLVED;
         e.amount = 0;
-        // interactions (skip zero transfers)
-        if (toWorker > 0) token.safeTransfer(worker, toWorker);
-        if (toClient > 0) token.safeTransfer(client, toClient);
+        // interactions (skip zero transfers) — in the asset the phase was funded with
+        address asset = e.asset;
+        if (toWorker > 0) _pay(asset, worker, toWorker);
+        if (toClient > 0) _pay(asset, client, toClient);
         return (toWorker, toClient);
     }
 
@@ -278,7 +343,7 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
         address client = e.client;
         e.status = Status.REFUNDED;
         e.amount = 0;
-        token.safeTransfer(client, amount);
+        _pay(e.asset, client, amount);
         emit PhaseRefunded(phaseId, client, amount);
     }
 
@@ -347,10 +412,10 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
     function getEscrow(bytes32 phaseId)
         external
         view
-        returns (address client, address worker, uint256 amount, Status status, uint64 releaseEligibleAfter)
+        returns (address client, address worker, uint256 amount, Status status, uint64 releaseEligibleAfter, address asset)
     {
         Escrow storage e = _escrows[phaseId];
-        return (e.client, e.worker, e.amount, e.status, e.releaseEligibleAfter);
+        return (e.client, e.worker, e.amount, e.status, e.releaseEligibleAfter, e.asset);
     }
 
     function getStake(bytes32 hireId)

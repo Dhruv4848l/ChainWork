@@ -5,11 +5,19 @@ export type TxHash = `0x${string}`;
 export interface EscrowView {
   client: string;
   worker: string;
-  /** ₹ still held in escrow (0 once released/resolved/refunded). */
+  /**
+   * ₹ still held in escrow (0 once released/resolved/refunded). Only meaningful for the
+   * default stablecoin (cwINR, 1 token = ₹1); for any other asset it is 0 — use the
+   * phase's rupee amount and `amountRaw` instead.
+   */
   amount: number;
   status: EscrowStatus;
   /** Unix seconds; 0 until delivery. */
   releaseEligibleAfter: number;
+  /** v2 (P6): what the phase was funded in — token address, or the zero address for the native coin. */
+  asset: string;
+  /** Exact base units held (any asset). */
+  amountRaw: bigint;
 }
 
 /**

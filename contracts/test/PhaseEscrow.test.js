@@ -53,7 +53,7 @@ describe("PhaseEscrow", () => {
       const { token, escrow, client, worker } = await loadFixture(deploy);
       await expect(fund(escrow, client, worker))
         .to.emit(escrow, "PhaseFunded")
-        .withArgs(PHASE, client.address, worker.address, AMOUNT);
+        .withArgs(PHASE, client.address, worker.address, await token.getAddress(), AMOUNT);
       expect(await token.balanceOf(await escrow.getAddress())).to.equal(AMOUNT);
       const e = await escrow.getEscrow(PHASE);
       expect(e.status).to.equal(Status.FUNDED);
@@ -332,6 +332,113 @@ describe("PhaseEscrow", () => {
       // The worker is paid exactly once; the re-entrant call was blocked by the guard.
       expect(await token.balanceOf(worker.address)).to.equal(AMOUNT);
       expect((await escrow.getEscrow(PHASE)).status).to.equal(Status.RELEASED);
+    });
+  });
+
+  describe("v2: multi-asset escrow", () => {
+    const USDT = (n) => BigInt(n) * 10n ** 6n; // 6-decimal stablecoin
+
+    async function deployV2() {
+      const base = await deploy();
+      const { escrow, admin, client } = base;
+      const Mock = await ethers.getContractFactory("MockToken");
+      const usdt = await Mock.deploy("Tether USD (test)", "USDT", 6);
+      await usdt.mint(client.address, USDT(100000));
+      await usdt.connect(client).approve(await escrow.getAddress(), ethers.MaxUint256);
+      await escrow.connect(admin).setAssetAllowed(await usdt.getAddress(), true);
+      await escrow.connect(admin).setAssetAllowed(ethers.ZeroAddress, true); // native coin
+      return { ...base, usdt };
+    }
+
+    it("only the admin can allow assets; disallowed assets can't fund", async () => {
+      const { escrow, client, worker, other } = await loadFixture(deploy);
+      const Mock = await ethers.getContractFactory("MockToken");
+      const usdc = await Mock.deploy("USD Coin (test)", "USDC", 6);
+      await expect(escrow.connect(other).setAssetAllowed(await usdc.getAddress(), true)).to.be.revertedWithCustomError(escrow, "AccessControlUnauthorizedAccount");
+      await expect(escrow.connect(client).fundPhaseWith(PHASE, worker.address, await usdc.getAddress(), 1)).to.be.revertedWithCustomError(escrow, "AssetNotAllowed");
+      await expect(escrow.connect(client).fundPhaseNative(PHASE, worker.address, { value: 1 })).to.be.revertedWithCustomError(escrow, "AssetNotAllowed");
+      expect(await escrow.allowedAsset(await escrow.token())).to.equal(true);
+    });
+
+    it("funds and releases in a 6-decimal ERC-20, paying out in the same asset", async () => {
+      const { escrow, usdt, client, worker } = await loadFixture(deployV2);
+      const amt = USDT(95);
+      await expect(escrow.connect(client).fundPhaseWith(PHASE, worker.address, await usdt.getAddress(), amt))
+        .to.emit(escrow, "PhaseFunded").withArgs(PHASE, client.address, worker.address, await usdt.getAddress(), amt);
+      const e = await escrow.getEscrow(PHASE);
+      expect(e.asset).to.equal(await usdt.getAddress());
+      await escrow.connect(client).approveRelease(PHASE);
+      expect(await usdt.balanceOf(worker.address)).to.equal(amt);
+      expect(await usdt.balanceOf(await escrow.getAddress())).to.equal(0n);
+    });
+
+    it("funds in the native coin; refund and verdict split pay native", async () => {
+      const { escrow, admin, client, worker } = await loadFixture(deployV2);
+      const amt = ethers.parseEther("1");
+      await expect(escrow.connect(client).fundPhaseNative(PHASE, worker.address, { value: amt }))
+        .to.emit(escrow, "PhaseFunded").withArgs(PHASE, client.address, worker.address, ethers.ZeroAddress, amt);
+      expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(amt);
+      // verdict 60/40 — exact amounts in wei
+      await escrow.connect(admin).raiseDispute(PHASE);
+      const wBefore = await ethers.provider.getBalance(worker.address);
+      await expect(escrow.connect(admin).resolveDispute(PHASE, 6000))
+        .to.emit(escrow, "DisputeResolved").withArgs(PHASE, 6000, ethers.parseEther("0.6"), ethers.parseEther("0.4"));
+      expect((await ethers.provider.getBalance(worker.address)) - wBefore).to.equal(ethers.parseEther("0.6"));
+      expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(0n);
+
+      const P2 = ethers.id("phase-native-refund");
+      await escrow.connect(client).fundPhaseNative(P2, worker.address, { value: amt });
+      await expect(escrow.connect(admin).refundToClient(P2)).to.changeEtherBalances([client, escrow], [amt, -amt]);
+    });
+
+    it("native funding is never accepted through the ERC-20 path, and zero value is refused", async () => {
+      const { escrow, client, worker } = await loadFixture(deployV2);
+      await expect(escrow.connect(client).fundPhaseWith(PHASE, worker.address, ethers.ZeroAddress, 1)).to.be.revertedWithCustomError(escrow, "AssetNotAllowed");
+      await expect(escrow.connect(client).fundPhaseNative(PHASE, worker.address, { value: 0 })).to.be.revertedWithCustomError(escrow, "InvalidAmount");
+    });
+
+    it("refuses fee-on-transfer tokens (would owe more than it holds)", async () => {
+      const { escrow, admin, client, worker } = await loadFixture(deploy);
+      const Fee = await ethers.getContractFactory("FeeOnTransferToken");
+      const fee = await Fee.deploy();
+      await fee.mint(client.address, ethers.parseEther("1000"));
+      await fee.connect(client).approve(await escrow.getAddress(), ethers.MaxUint256);
+      await escrow.connect(admin).setAssetAllowed(await fee.getAddress(), true);
+      await expect(escrow.connect(client).fundPhaseWith(PHASE, worker.address, await fee.getAddress(), ethers.parseEther("100")))
+        .to.be.revertedWithCustomError(escrow, "AmountMismatch");
+    });
+
+    it("a re-entrant native payee is paid exactly once", async () => {
+      const { escrow, client } = await loadFixture(deployV2);
+      const R = await ethers.getContractFactory("ReentrantReceiver");
+      const payee = await R.deploy();
+      const amt = ethers.parseEther("2");
+      await escrow.connect(client).fundPhaseNative(PHASE, await payee.getAddress(), { value: amt });
+      await payee.arm(await escrow.getAddress(), PHASE);
+      await escrow.connect(client).approveRelease(PHASE);
+      expect(await ethers.provider.getBalance(await payee.getAddress())).to.equal(amt);
+      expect(await payee.hits()).to.equal(1n);
+      expect((await escrow.getEscrow(PHASE)).status).to.equal(Status.RELEASED);
+    });
+
+    it("a payee that refuses native coin makes the release revert (funds stay safe in escrow)", async () => {
+      const { escrow, client } = await loadFixture(deployV2);
+      const R = await ethers.getContractFactory("ReentrantReceiver");
+      const payee = await R.deploy();
+      await payee.setReject(true);
+      await escrow.connect(client).fundPhaseNative(PHASE, await payee.getAddress(), { value: 5n });
+      await expect(escrow.connect(client).approveRelease(PHASE)).to.be.revertedWithCustomError(escrow, "NativeTransferFailed");
+      expect((await escrow.getEscrow(PHASE)).status).to.equal(Status.FUNDED);
+      expect(await ethers.provider.getBalance(await escrow.getAddress())).to.equal(5n);
+    });
+
+    it("disallowing an asset stops new fundings but existing escrows still pay out", async () => {
+      const { escrow, admin, usdt, client, worker } = await loadFixture(deployV2);
+      await escrow.connect(client).fundPhaseWith(PHASE, worker.address, await usdt.getAddress(), USDT(10));
+      await escrow.connect(admin).setAssetAllowed(await usdt.getAddress(), false);
+      await expect(escrow.connect(client).fundPhaseWith(ethers.id("p2"), worker.address, await usdt.getAddress(), USDT(1))).to.be.revertedWithCustomError(escrow, "AssetNotAllowed");
+      await escrow.connect(client).approveRelease(PHASE);
+      expect(await usdt.balanceOf(worker.address)).to.equal(USDT(10));
     });
   });
 

@@ -4,7 +4,7 @@ const path = require("path");
 const { grantRelayerRoles } = require("./lib/roles");
 
 /*
-  Deploys the test stablecoin + PhaseEscrow and writes the addresses + ABI location
+  Deploys the test stablecoin + PhaseEscrow (v2, multi-asset) + test USDT / USDC and writes the addresses + ABI location
   to deployments/<network>.json so Phase 7 can wire the app to them.
 
   Local dry run:   npx hardhat run scripts/deploy.js
@@ -32,6 +32,20 @@ async function main() {
   const escrowAddr = await escrow.getAddress();
   console.log("PhaseEscrow:  ", escrowAddr);
 
+  // v2 (payment plan P6): test USDT / USDC (6 decimals) and the native coin, allowlisted
+  // alongside the stablecoin. On mainnet these would be the real token addresses instead.
+  const Mock = await hre.ethers.getContractFactory("MockToken");
+  const extra = {};
+  for (const [symbol, name] of [["USDT", "Tether USD (test)"], ["USDC", "USD Coin (test)"]]) {
+    const t = await Mock.deploy(name, symbol, 6);
+    await t.waitForDeployment();
+    extra[symbol] = await t.getAddress();
+    await (await escrow.setAssetAllowed(extra[symbol], true)).wait();
+    console.log(`Mock${symbol}:      `, extra[symbol]);
+  }
+  await (await escrow.setAssetAllowed(hre.ethers.ZeroAddress, true)).wait();
+  console.log("Native coin:    allowed");
+
   // The app's relayer signs every attestor/dispute call. If it isn't the deployer
   // (it shouldn't be off the local node), hand it the roles now — otherwise every
   // escrow operation after funding reverts.
@@ -45,7 +59,7 @@ async function main() {
     deployer: deployer.address,
     relayer,
     relayerRoles,
-    contracts: { MockStablecoin: tokenAddr, PhaseEscrow: escrowAddr },
+    contracts: { MockStablecoin: tokenAddr, PhaseEscrow: escrowAddr, MockUSDT: extra.USDT, MockUSDC: extra.USDC },
     abiPath: "contracts/artifacts/contracts/PhaseEscrow.sol/PhaseEscrow.json",
     deployedAt: new Date().toISOString(),
   };

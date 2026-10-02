@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { Prisma } from "@/generated/platform";
 import { platformDb } from "@/lib/platformDb";
 import { accountForUser } from "./keystore";
+import { TOKEN_ADDRESS } from "./config";
 import { payoutAddressFor } from "./payout";
 import { keyFor } from "./keys";
 import {
@@ -245,10 +246,12 @@ export const demoAdapter: ChainAdapter = {
   async readEscrow(phaseId): Promise<EscrowView> {
     await adoptLegacyPhase(phaseId);
     const row = await platformDb.demoEscrow.findUnique({ where: { key: keyFor(phaseId) } });
-    if (!row) return { client: ZERO, worker: ZERO, amount: 0, status: "NONE", releaseEligibleAfter: 0 };
+    // Demo escrows are held in demo rupees — reported as the stablecoin (1 = ₹1, 18 decimals).
+    if (!row) return { client: ZERO, worker: ZERO, amount: 0, status: "NONE", releaseEligibleAfter: 0, asset: TOKEN_ADDRESS || ZERO, amountRaw: BigInt(0) };
     return {
       client: row.client, worker: row.worker, amount: Number(row.amount),
       status: row.status as EscrowStatus, releaseEligibleAfter: row.releaseEligibleAfter ?? 0,
+      asset: TOKEN_ADDRESS || ZERO, amountRaw: BigInt(paiseOf(row.amount)) * BigInt(10) ** BigInt(16),
     };
   },
 
