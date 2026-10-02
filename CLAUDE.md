@@ -323,6 +323,11 @@ vars at Amoy + a real relayer key.
   otplib v13 `generateSync`/`verifySync`; dev secret `JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP` shared by all
   seeded admins since their seeded secrets are too short — the check itself is real; the current code
   is logged to the server console in dev). **No signup.** Proxy guards `/admin/*` except `/admin/login`.
+  **Production (security fix 2026-10-03):** no bypass code and no dev-secret fallback — an admin
+  needs their own enrolled TOTP secret (`src/lib/admin/totpPolicy.ts`, tested). Enrol / rotate with
+  `ADMIN_DATABASE_URL=… ROTATE_ADMINS=yes npm run script -- scripts/rotate-admin-credentials.mts`
+  (writes logins + QR codes to git-ignored `.admin-credentials/`). The `admin123` + dev-secret
+  logins above are LOCAL DEV ONLY; production admins were rotated (this repo is public).
 - **THE BRIDGE SERVICE `src/lib/admin/bridge.ts` — the ONLY module under the admin surface that
   imports `platformDb`.** Every platform read/sanctioned-write for admin code goes through it, by
   primary-key id, sanitized (emails/phones masked). Verified by grep: no admin page/feature imports

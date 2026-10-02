@@ -62,6 +62,17 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   by 31 tests including a live reentrancy attack and a no-drain assertion.
 - **[PRE-MAINNET] Professional audit.** Non-negotiable before mainnet — top of the checklist.
 
+## Admin console takeover (found + fixed 2026-10-03) — CRITICAL
+
+- **[FIXED] Live admin console open to anyone.** Production accepted `000000` as a 2FA code
+  (commit 349ab55) and fell back to a shared dev TOTP secret that is published in this
+  (public) repo; all 5 production admins still had the seeded password `admin123`, also in the
+  repo. Fix: every production admin rotated to a random password + their own TOTP secret
+  (`scripts/rotate-admin-credentials.mts`, audit-logged); the bypass and the production
+  fallback removed (`src/lib/admin/totpPolicy.ts`, `totpPolicy.test.ts` incl. a source scan for
+  hard-coded codes). The production audit log showed **no admin logins ever**, so no evidence
+  the hole was used.
+
 ## Payment-plan findings (P6–P7, 2026-10)
 
 - **[FIXED] Reconciler adopted short / wrong-currency fundings.** Drift repair recorded any

@@ -44,12 +44,14 @@ export async function adminLoginAction(_prev: AdminActionState, formData: FormDa
     return { error: "Invalid credentials or 2FA code." };
   }
 
+  // No bypass code and, in production, no shared fallback secret: an admin without an
+  // enrolled authenticator can't log in (scripts/rotate-admin-credentials.mts enrols them).
   const secret = totpSecretFor(admin.totpSecret);
   // Dev aid: log the current valid code so 2FA is testable without an app.
-  if (process.env.NODE_ENV !== "production") {
+  if (secret && process.env.NODE_ENV !== "production") {
     console.log(`\n[MOCK 2FA] Current code for ${email}: ${currentTotp(secret)}\n`);
   }
-  if (!code || (!verifyTotp(secret, code) && code !== "000000")) {
+  if (!secret || !code || !verifyTotp(secret, code)) {
     return { error: "Invalid credentials or 2FA code." };
   }
 

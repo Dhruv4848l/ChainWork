@@ -67,3 +67,6 @@ docs/ChainWork_Demo_Accounts.docx
 /playwright-report
 /test-results
 /e2e/.state.json
+
+# Rotated admin credentials (scripts/rotate-admin-credentials.mts) — never commit
+/.admin-credentials
