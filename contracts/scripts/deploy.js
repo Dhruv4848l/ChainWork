@@ -18,13 +18,22 @@ async function main() {
   const net = hre.network.name;
   console.log(`Deploying to "${net}" as ${deployer.address}`);
 
-  // On a real testnet you'd point at an existing stablecoin. For Amoy/local we
-  // deploy the mock so the whole flow is exercisable end to end.
-  const Token = await hre.ethers.getContractFactory("MockStablecoin");
-  const token = await Token.deploy();
-  await token.waitForDeployment();
-  const tokenAddr = await token.getAddress();
-  console.log("MockStablecoin:", tokenAddr);
+  // On a real testnet you'd point at an existing stablecoin. For Amoy/local we deploy the
+  // mock so the whole flow is exercisable end to end — or reuse one already deployed
+  // (EXISTING_TOKEN_ADDRESS=0x…, e.g. the cwINR from an earlier deploy) to save gas.
+  let tokenAddr;
+  if (process.env.EXISTING_TOKEN_ADDRESS) {
+    tokenAddr = hre.ethers.getAddress(process.env.EXISTING_TOKEN_ADDRESS);
+    if ((await hre.ethers.provider.getCode(tokenAddr)) === "0x") throw new Error(`No contract at EXISTING_TOKEN_ADDRESS ${tokenAddr}.`);
+    const existing = await hre.ethers.getContractAt("MockStablecoin", tokenAddr);
+    console.log(`MockStablecoin: ${tokenAddr} (reused — ${await existing.symbol()}, ${await existing.decimals()} decimals)`);
+  } else {
+    const Token = await hre.ethers.getContractFactory("MockStablecoin");
+    const token = await Token.deploy();
+    await token.waitForDeployment();
+    tokenAddr = await token.getAddress();
+    console.log("MockStablecoin:", tokenAddr);
+  }
 
   const Escrow = await hre.ethers.getContractFactory("PhaseEscrow");
   const escrow = await Escrow.deploy(tokenAddr, deployer.address);
