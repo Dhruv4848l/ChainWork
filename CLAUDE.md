@@ -608,6 +608,11 @@ Three gaps between the built product and the story we demo were closed here.
   `src/lib/chain/publicChain.ts` — never expose `CHAIN_RPC_URL`). Show wallet errors via
   `walletErrorMessage()`, enforce the chain with `useEnsureChain()` before signing. New wallet
   hosts must be added to the CSP in next.config.ts.
+- **Live wallet (P5):** holdings via `src/lib/portfolio/` (networks registry, pure maths,
+  CoinGecko prices) behind `/api/wallet/portfolio`; client `usePortfolio` + `WalletTicker`
+  in `src/features/wallet/ticker/`. In-flight payments: `PaymentTracker` / `PendingPayments`
+  (`src/features/shared/`). Verify animated / client UI with headless Playwright when the
+  in-app pane is hidden (it pauses requestAnimationFrame, so pages don't hydrate there).
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)

@@ -347,7 +347,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | P2 | PDF receipts (success + failed) and statements | ✅ Done (2026-10-02) |
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | ✅ Done (2026-10-02) |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | ✅ Done (2026-10-02) — WalletConnect needs a project id |
-| P5 | Live wallet tracker + rolling ticker | — |
+| P5 | Live wallet tracker + rolling ticker | ✅ Done (2026-10-02) |
 | P6 | Multi-crypto payment window (PhaseEscrow v2) | — |
 | P7 | Hardening, E2E tests, "turn off demo money" runbook | — |
 
@@ -472,16 +472,31 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 - **Not yet exercised:** a real MetaMask / Coinbase extension and WalletConnect (needs the
   project id). Worth one manual pass.
 
+**P5 — what changed (done 2026-10-02)**
+- **Portfolio endpoint** `GET /api/wallet/portfolio?address=` — non-zero holdings across
+  Ethereum, Polygon, BNB Chain (+ Sepolia, Amoy, and cwINR on the escrow chain), one batched
+  read per network, live INR prices (CoinGecko) with a fallback table. Optional
+  `ALCHEMY_API_KEY` / `COINGECKO_API_KEY`.
+- **Live polling** every 12 s, paused while the tab is hidden.
+- **Pending-transaction tracker**: "Confirming… n/12 blocks", then a toast with the receipt
+  link; an "In progress" card on Payments / Earnings.
+- **WalletTicker**: spinning symbol letters, odometer digits, icon crossfade, network tag +
+  ≈ ₹; pauses on hover; click → holdings panel; reduced-motion crossfade; static list for
+  screen readers. Large card on Payments / Earnings, compact one in the top bar.
+- **Verified** in headless Chromium (see the P5 commit) + a real mainnet portfolio read.
+  74 unit tests; production build passes.
+- **Testing note:** the in-app browser pane doesn't run animation frames while it's hidden,
+  so pages don't hydrate there; P5 was verified with Playwright on the cached Chromium.
+
 **Resume here**
-1. **User step:** create a free project at https://cloud.reown.com, allow this site's domain,
-   and set `NEXT_PUBLIC_WC_PROJECT_ID` (local `.env.local` + Vercel). Then try WalletConnect
-   from a phone, and MetaMask / Coinbase in Chrome.
-2. Start **P5 — live wallet tracker + rolling ticker** (portfolio endpoint across networks,
-   12 s polling, pending-transaction tracker, the animated `WalletTicker`). An Alchemy (or
-   similar) RPC key avoids public-RPC rate limits for multi-chain reads.
-3. Statement wallet section is still in / out / net (see P3 notes).
-4. Local test data: hires `cmuq7pidl…`, `cmuqkdi3g…`, `cmuqkfpxt…`; Ravi is now linked to
-   Hardhat account #19 (`0x8626…1199`, in its 24 h hold). `npm run db:reset` clears it.
-5. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
-   `phase_reconcile_cursor`, `receipts`, `wallet_link`), run `scripts/backfill-payments.mts`,
-   set `APP_BASE_URL`, `NEXT_PUBLIC_WC_PROJECT_ID`, and add the `delivery_stake_pct` config row.
+1. Start **P6 — multi-crypto payment window** (PhaseEscrow v2 with allowlisted ERC-20 +
+   native assets, QuoteService with a 5-min price lock, the checkout modal, demo-mode EIP-712
+   authorisations, server-side verification of on-chain funding). The contract part (6.1)
+   needs a redeploy to Amoy afterwards — a user step with the deployer key.
+2. Local dev: the Hardhat chain loses all state on restart (balances, escrows). Consider
+   switching the local node to anvil `--state` (persists) — or re-seed after restarts.
+3. Statement wallet section still in / out / net (P3 note).
+4. Before deploying to Neon/Vercel: `npm run db:deploy` (migrations `demo_chain`,
+   `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`), run
+   `scripts/backfill-payments.mts`, set `APP_BASE_URL`, `NEXT_PUBLIC_WC_PROJECT_ID`, optionally
+   `ALCHEMY_API_KEY` / `COINGECKO_API_KEY`, and add the `delivery_stake_pct` config row.

@@ -1,6 +1,6 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0–P4 done (2026-10-02) · next: P5 — see PROGRESS.md "Resume here"**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0–P5 done (2026-10-02) · next: P6 — see PROGRESS.md "Resume here"**_
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:
@@ -314,3 +314,8 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
   picker, with AppKit only as WalletConnect's lazily loaded QR modal — lighter, and works
   without a project id. `@wagmi/connectors` must NOT be installed directly (its optional
   peers conflict); use the copy nested under `wagmi` via `wagmi/connectors/*`.
+- **P5 (2026-10-02):** the portfolio covers Ethereum, Polygon and BNB Chain plus Sepolia,
+  Amoy and the escrow chain; Bitcoin / XRP appear as WBTC / BTCB / Binance-Peg XRP. Prices
+  are display-only (never used to move money). The pending tracker shows n/12 confirmations
+  for the user, while payments themselves still confirm at the first mined block (the
+  reconciler covers reorg-free testnets; deeper finality is a P7 / pre-mainnet item).
