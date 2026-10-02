@@ -29,6 +29,13 @@ npm run test:e2e            # Playwright: wallet, testnet + demo payment windows
 
 ## 1. A private key set for the app
 
+> **Done for production on 2026-10-03:** a fresh 24-word phrase is set as `CHAIN_MNEMONIC` on
+> Vercel (Production + Preview), backed up in the git-ignored `.secrets/` folder, and every
+> existing wallet was re-keyed with `scripts/rotate-chain-mnemonic.mts`. New relayer:
+> `0x4170d656a439E1682004f9Fb1d3302442a076258`. To rotate again, use that script (it moves demo
+> balances and open demo escrows to the new addresses in one transaction) and redeploy at once.
+
+
 The local `.env` uses Hardhat's **public** test mnemonic; anyone can drain wallets derived
 from it. The app refuses to sign with it on any chain except 31337 (`assertChainWritable`).
 

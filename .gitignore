@@ -70,3 +70,6 @@ docs/ChainWork_Demo_Accounts.docx
 
 # Rotated admin credentials (scripts/rotate-admin-credentials.mts) — never commit
 /.admin-credentials
+
+# Production secrets kept locally (chain mnemonic backup) — never commit
+/.secrets

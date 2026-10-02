@@ -552,9 +552,12 @@ accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
 **Resume here** — the payment plan (P0–P7) is complete and live in demo mode.
 1. **Go live on Amoy (user step, needs the deployer key):** follow
    [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md) end to end. The live
-   health check already shows what's left: production's `CHAIN_MNEMONIC` is the **public
-   Hardhat phrase** (replace it), the escrow at `0xfd80…0dd8` is v1 (redeploy v2), the
-   relayer lacks ATTESTOR/DISPUTE roles and has ~0.0002 POL of gas.
+   health check already shows what's left: ~~production's `CHAIN_MNEMONIC` is the public
+   Hardhat phrase~~ **replaced 2026-10-03** (new relayer `0x4170…6258`, wallets re-keyed by
+   `scripts/rotate-chain-mnemonic.mts`); the escrow at `0xfd80…0dd8` is v1 — redeploy v2
+   (`RELAYER_ADDRESS=0x4170d656a439E1682004f9Fb1d3302442a076258 npm run deploy:amoy` in
+   `contracts/`, needs ~0.2 test POL on deployer `0x89A5363b95De671f1C77aEfdcB26CeA707746781`),
+   then fund the relayer with test POL.
 2. Admin tooling: escrows the reconciler flags as "not adopted" (tampered / short wallet
    payments) only appear in the cron log — give ADM-07/08 a view + a refund-to-payer action.
 3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the
