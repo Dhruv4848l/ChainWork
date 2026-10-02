@@ -346,7 +346,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | P1 | Payment ledger, transaction outbox, state machines, reconciler | ✅ Done (2026-10-02 — UI path verified) |
 | P2 | PDF receipts (success + failed) and statements | ✅ Done (2026-10-02) |
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | ✅ Done (2026-10-02) |
-| P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | — |
+| P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | ✅ Done (2026-10-02) — WalletConnect needs a project id |
 | P5 | Live wallet tracker + rolling ticker | — |
 | P6 | Multi-crypto payment window (PhaseEscrow v2) | — |
 | P7 | Hardening, E2E tests, "turn off demo money" runbook | — |
@@ -455,18 +455,33 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   wallet, stake lock with shortfall; DB/chain integration runs for wallet linking (13/13)
   and the stake lifecycle (10/10).
 
+**P4 — what changed (done 2026-10-02)**
+- **wagmi 3** (+ React Query) replaces the raw `window.ethereum` code; the provider wraps only
+  the worker / client dashboards. Cookie storage keeps the connection across the server render.
+- **Wallet picker:** every installed extension found via EIP-6963, with its own name and icon;
+  WalletConnect (QR / mobile / Safari) appears once `NEXT_PUBLIC_WC_PROJECT_ID` is set.
+- **Network:** connecting requests the escrow chain; a blocking "Wrong network" banner with a
+  Switch button (adds the network if the wallet doesn't know it); never signs off-chain.
+- **Live state:** account / network changes in the wallet update the page instantly, no
+  reload; a "this isn't your linked wallet — switch or re-link" warning.
+- **Plain-language wallet errors**, **CSP** updated for the public RPC + WalletConnect hosts,
+  **Add cwINR to wallet**, explorer links.
+- **Verified** with an injected EIP-6963 test wallet signing through the local Hardhat node:
+  discovery, network switch, live account switch (74 ms, no reload), watchAsset, a full
+  re-link (SIWE + code), no CSP errors. 69 unit tests; production build passes.
+- **Not yet exercised:** a real MetaMask / Coinbase extension and WalletConnect (needs the
+  project id). Worth one manual pass.
+
 **Resume here**
-1. Start **P4 — universal wallet connection** (wagmi + EIP-6963 picker + WalletConnect,
-   network switching, live account changes, wallet error messages, CSP). Needs a free
-   Reown/WalletConnect `projectId` from the user (`NEXT_PUBLIC_WC_PROJECT_ID`).
-   The SIWE link flow from P3.5 stays — P4 only replaces how the wallet is reached.
-2. Statement wallet section still shows in / out / net (history before P3.1 had implicit
-   mints and the demo grant has no ledger entry). An opening-balance entry per wallet would
-   allow a true running balance — small follow-up.
-3. Local test data from these checks: hires `cmuq7pidl…` (DB-ahead of the chain),
-   `cmuqkdi3g…` / `cmuqkfpxt…` (stake tests, signatures set directly), Ravi's linked test
-   wallet `0x5e6A…40a4` (hold backdated). `npm run db:reset` + the demo seed clears them.
-4. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`,
-   `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`), run
-   `scripts/backfill-payments.mts`, set `APP_BASE_URL` (receipt QR + SIWE domain), and add the
-   `delivery_stake_pct` PlatformConfig row (or re-seed config).
+1. **User step:** create a free project at https://cloud.reown.com, allow this site's domain,
+   and set `NEXT_PUBLIC_WC_PROJECT_ID` (local `.env.local` + Vercel). Then try WalletConnect
+   from a phone, and MetaMask / Coinbase in Chrome.
+2. Start **P5 — live wallet tracker + rolling ticker** (portfolio endpoint across networks,
+   12 s polling, pending-transaction tracker, the animated `WalletTicker`). An Alchemy (or
+   similar) RPC key avoids public-RPC rate limits for multi-chain reads.
+3. Statement wallet section is still in / out / net (see P3 notes).
+4. Local test data: hires `cmuq7pidl…`, `cmuqkdi3g…`, `cmuqkfpxt…`; Ravi is now linked to
+   Hardhat account #19 (`0x8626…1199`, in its 24 h hold). `npm run db:reset` clears it.
+5. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
+   `phase_reconcile_cursor`, `receipts`, `wallet_link`), run `scripts/backfill-payments.mts`,
+   set `APP_BASE_URL`, `NEXT_PUBLIC_WC_PROJECT_ID`, and add the `delivery_stake_pct` config row.

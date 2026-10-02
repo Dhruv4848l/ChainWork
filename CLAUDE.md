@@ -603,6 +603,11 @@ Three gaps between the built product and the story we demo were closed here.
   only in demo mode. External wallets link ONLY via `src/lib/wallet/link.ts` (SIWE + one-time
   code + 24 h hold — `payoutAddressFor` honours the hold). Delivery stake:
   `src/lib/escrow/stake.ts` (lock / refund / forfeit via `runPayment`).
+- **User wallets (P4):** wagmi 3 in `src/features/wallet/web3/` (provider only in the
+  dashboard layouts; `useChainInfo()` for chain/token/WalletConnect id from
+  `src/lib/chain/publicChain.ts` — never expose `CHAIN_RPC_URL`). Show wallet errors via
+  `walletErrorMessage()`, enforce the chain with `useEnsureChain()` before signing. New wallet
+  hosts must be added to the CSP in next.config.ts.
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)

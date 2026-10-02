@@ -1,6 +1,6 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 · P1 · P2 · P3 done (2026-10-02) · next: P4 — see PROGRESS.md "Resume here"**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0–P4 done (2026-10-02) · next: P5 — see PROGRESS.md "Resume here"**_
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:
@@ -309,3 +309,8 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
   delivery stake is required at hire level and gates the first funding; its percentage is a
   new PlatformConfig key `delivery_stake_pct` (default 10). Gas recovery runs after a
   withdrawal only (a move-to-wallet may leave a balance that still needs gas).
+- **P4 (2026-10-02):** wagmi is v3 (not v2 — current at build time; `useConnection` replaces
+  `useAccount`). Reown AppKit is not used as the UI: wagmi's EIP-6963 discovery + our own
+  picker, with AppKit only as WalletConnect's lazily loaded QR modal — lighter, and works
+  without a project id. `@wagmi/connectors` must NOT be installed directly (its optional
+  peers conflict); use the copy nested under `wagmi` via `wagmi/connectors/*`.
