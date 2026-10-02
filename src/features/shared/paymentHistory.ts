@@ -1,6 +1,7 @@
 import "server-only";
 import { platformDb } from "@/lib/platformDb";
 import { kindLabel } from "@/lib/receipts/present";
+import { payoutAddressFor } from "@/lib/chain/payout";
 
 /*
   A user's payment history (payment plan P2.7) — every PaymentTransaction they were
@@ -137,6 +138,52 @@ export async function getPhaseReceipts(phaseIds: string[], userId: string): Prom
     const event = r.payment.kind === "RELEASE" && r.payment.operation === "autoRelease" ? "Auto-release" : PHASE_EVENT[r.payment.kind] ?? r.payment.kind;
     const failed = r.outcome === "FAILED";
     (out[phaseId] ??= []).push({ receiptNo: r.receiptNo, label: failed ? `Failed ${event.toLowerCase()}` : event, failed });
+  }
+  return out;
+}
+
+export interface PhasePayout {
+  address: string;
+  /** "your ChainWork wallet" / "your linked wallet" (worker view) or "the worker's …" (client view). */
+  label: string;
+  /** true once escrow is funded: the address is fixed on-chain; false = where it WOULD go if funded now. */
+  fixed: boolean;
+  /** true once the money has left escrow (released / settled). */
+  paid: boolean;
+}
+
+/**
+ * Where each phase of a hire pays the worker (payment plan P3.4). A funded phase pays the
+ * address recorded on-chain at funding — taken from its FUND payment; an unfunded phase
+ * would pay the worker's current payout address (custodial during a new link's hold).
+ */
+export async function getPhasePayouts(
+  phases: { id: string; status: string }[],
+  workerId: string,
+  viewer: "worker" | "client",
+): Promise<Record<string, PhasePayout>> {
+  if (phases.length === 0) return {};
+  const [funds, wallet, current] = await Promise.all([
+    platformDb.paymentTransaction.findMany({
+      where: { phaseId: { in: phases.map((p) => p.id) }, kind: "FUND", status: "CONFIRMED" },
+      select: { phaseId: true, toAddress: true },
+    }),
+    platformDb.wallet.findUnique({ where: { userId: workerId }, select: { custodialAddress: true, externalAddress: true } }),
+    payoutAddressFor(workerId),
+  ]);
+  const who = viewer === "worker" ? "your" : "the worker's";
+  const label = (addr: string) =>
+    wallet?.externalAddress && addr.toLowerCase() === wallet.externalAddress.toLowerCase()
+      ? `${who} linked wallet`
+      : addr.toLowerCase() === wallet?.custodialAddress.toLowerCase()
+        ? `${who} ChainWork wallet`
+        : `${who} earlier payout address`;
+  const funded = new Map(funds.filter((f) => f.toAddress).map((f) => [f.phaseId!, f.toAddress!]));
+  const out: Record<string, PhasePayout> = {};
+  for (const p of phases) {
+    if (["RELEASED", "RESOLVED", "AUTO_CANCELLED"].includes(p.status) && !funded.has(p.id)) continue;
+    const address = funded.get(p.id) ?? current;
+    out[p.id] = { address, label: label(address), fixed: funded.has(p.id), paid: p.status === "RELEASED" || p.status === "RESOLVED" };
   }
   return out;
 }

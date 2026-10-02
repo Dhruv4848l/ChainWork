@@ -7,6 +7,8 @@ import {
   topUpCustodial,
 } from "@/lib/chain/wallet";
 import { formatInr } from "@/lib/format";
+import { platformDb } from "@/lib/platformDb";
+import { isExternalPayoutActive, payoutActiveFrom } from "@/lib/wallet/siwe";
 import { completeWalletLink, startWalletLink, unlinkWallet } from "@/lib/wallet/link";
 import * as chain from "@/lib/chain/escrow";
 import { demoLockedCreditInr } from "@/lib/chain/demoAdapter";
@@ -74,6 +76,37 @@ export async function addFundsAction(amount: number = 10000): Promise<WalletActi
   revalidatePath("/dashboard/client/hires", "layout");
   if (!res.ok) return { error: res.reason };
   return { ok: true, message: `Added ${formatInr(amountInr)} to your wallet (mock on-ramp).` };
+}
+
+/**
+ * Move money from the ChainWork (custodial) wallet to the user's verified external wallet
+ * (payment plan P3.3). Only after the link's safety hold — the same rule that guards new
+ * payouts — and only the withdrawable balance (never demo credit). Receipted like any payment.
+ */
+export async function moveToWalletAction(amount?: number): Promise<WalletActionState> {
+  const user = await requireUser();
+  const wallet = await platformDb.wallet.findUnique({ where: { userId: user.id } });
+  if (!wallet?.externalAddress) return { error: "Link your own wallet first." };
+  if (!isExternalPayoutActive(wallet.externalLinkedAt)) {
+    const from = payoutActiveFrom(wallet.externalLinkedAt)!;
+    return { error: `Your new wallet is in its 24-hour safety hold until ${from.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} IST.` };
+  }
+  const available = await withdrawableInr(user.id);
+  const amountInr = amount == null ? available : Math.round(Number(amount) * 100) / 100;
+  if (!Number.isFinite(amountInr) || amountInr <= 0) return { error: "Enter an amount to move." };
+  if (amountInr > available) return { error: `You can move up to ${formatInr(available)}.` };
+
+  const from = await custodialAddressOf(user.id);
+  const to = wallet.externalAddress;
+  const res = await runPayment(
+    { kind: "MOVE_TO_EXTERNAL", operation: "transfer", signer: "CUSTODIAL", amountInr, payerUserId: user.id, fromAddress: from, toAddress: to },
+    () => chain.adapter().transferFromCustodial(user.id, to, amountInr),
+    { afterConfirmed: () => refreshBalanceCache(user.id) },
+  );
+  revalidatePath("/dashboard/worker/earnings");
+  revalidatePath("/dashboard/client/payments");
+  if (!res.ok) return { error: res.reason };
+  return { ok: true, message: `Moved ${formatInr(amountInr)} to ${to.slice(0, 6)}…${to.slice(-4)}. Receipt ${res.receiptNo}.` };
 }
 
 /**

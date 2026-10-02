@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
-import { completeWalletLinkAction, startWalletLinkAction, unlinkWalletAction } from "./actions";
+import { completeWalletLinkAction, moveToWalletAction, startWalletLinkAction, unlinkWalletAction } from "./actions";
 
 /*
   AUTH-10 / WK-12 / CL-08 — link an external self-custody wallet as the payout address
@@ -26,7 +26,16 @@ function istWhen(iso: string) {
   return new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
 }
 
-export function ExternalWalletConnect({ linkedAddress, payoutActiveFrom }: { linkedAddress: string | null; payoutActiveFrom?: string | null }) {
+export function ExternalWalletConnect({
+  linkedAddress,
+  payoutActiveFrom,
+  withdrawableInr = 0,
+}: {
+  linkedAddress: string | null;
+  payoutActiveFrom?: string | null;
+  /** Shown as the default "move to my wallet" amount (P3.3). */
+  withdrawableInr?: number;
+}) {
   const router = useRouter();
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +43,9 @@ export function ExternalWalletConnect({ linkedAddress, payoutActiveFrom }: { lin
   const [pending, setPending] = useState<{ message: string; signature: string; sentTo: string; address: string } | null>(null);
   const [code, setCode] = useState("");
   const [unlinking, startUnlink] = useTransition();
+  const [moveAmount, setMoveAmount] = useState(String(Math.floor(withdrawableInr)));
+  const [moving, startMove] = useTransition();
+  const [moveMsg, setMoveMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   function fail(msg: string) {
     setError(msg);
@@ -96,6 +108,37 @@ export function ExternalWalletConnect({ linkedAddress, payoutActiveFrom }: { lin
             : "— new escrow payouts settle to this address. Gas is still covered by the platform."}
         </div>
         {notice && <p className="mt-2 text-xs text-emerald">{notice}</p>}
+        {!cooling && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              startMove(async () => {
+                const r = await moveToWalletAction(Number(moveAmount));
+                setMoveMsg({ text: r.message ?? r.error ?? "", ok: !r.error });
+                if (!r.error) router.refresh();
+              });
+            }}
+            className="mt-3 flex flex-wrap items-center gap-2"
+          >
+            <label className="flex items-center rounded-lg border border-line bg-card2 pl-2.5 text-[13px] text-ink3 focus-within:border-bronze">
+              ₹
+              <input
+                type="number"
+                min={1}
+                step="0.01"
+                value={moveAmount}
+                onChange={(e) => setMoveAmount(e.target.value)}
+                aria-label="Amount to move to your wallet, in rupees"
+                className="w-24 bg-transparent px-1.5 py-1.5 text-[13px] text-ink outline-none"
+              />
+            </label>
+            <Button type="submit" size="sm" variant="secondary" disabled={moving || withdrawableInr <= 0}>
+              {moving ? "Moving…" : "Move to my wallet"}
+            </Button>
+            <span className="text-[11px] text-ink3">from your ChainWork wallet</span>
+            {moveMsg && <p className={`w-full text-xs ${moveMsg.ok ? "text-emerald" : "text-ember"}`}>{moveMsg.text}</p>}
+          </form>
+        )}
         <button
           onClick={() => startUnlink(async () => { await unlinkWalletAction(); router.refresh(); })}
           disabled={unlinking}

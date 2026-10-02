@@ -67,7 +67,11 @@ export default async function EarningsPage() {
           <Card className="p-6">
             <h3 className="mb-1.5 text-[15px] font-semibold text-ink">Your wallet</h3>
             <WalletAddresses wallet={wallet} />
-            <ExternalWalletConnect linkedAddress={wallet.externalAddress} payoutActiveFrom={wallet.externalActiveFrom} />
+            <ExternalWalletConnect
+              linkedAddress={wallet.externalAddress}
+              payoutActiveFrom={wallet.externalActiveFrom}
+              withdrawableInr={wallet.withdrawableInr}
+            />
           </Card>
         </div>
 

@@ -43,7 +43,11 @@ export default async function ClientPaymentsPage() {
       <Card className="mb-3.5 p-6">
         <h3 className="mb-1.5 text-[15px] font-semibold text-ink">Your wallet</h3>
         <WalletAddresses wallet={wallet} />
-        <ExternalWalletConnect linkedAddress={wallet.externalAddress} payoutActiveFrom={wallet.externalActiveFrom} />
+        <ExternalWalletConnect
+              linkedAddress={wallet.externalAddress}
+              payoutActiveFrom={wallet.externalActiveFrom}
+              withdrawableInr={wallet.withdrawableInr}
+            />
       </Card>
 
       <div className="grid gap-3.5 lg:grid-cols-[1fr_1.6fr]">

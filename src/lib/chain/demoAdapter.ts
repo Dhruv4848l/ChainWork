@@ -297,6 +297,21 @@ export const demoAdapter: ChainAdapter = {
     return { txHash: demoTxHash(), amountInr: moved / 100 };
   },
 
+  /** Moves only withdrawable demo balance — the locked demo-credit grant never leaves. */
+  async transferFromCustodial(userId, to, amountInr) {
+    const paise = toPaise(amountInr);
+    const from = (await accountForUser(userId)).address;
+    await platformDb.$transaction(async (tx) => {
+      const { balance, locked } = await lockAccount(tx, from);
+      if (paise <= 0 || paise > balance - locked) {
+        throw new EscrowRuleError("InsufficientBalance", `${from} can move ₹${Math.max(0, balance - locked) / 100}`);
+      }
+      await tx.demoAccount.update({ where: { address: norm(from) }, data: { balance: { decrement: rupees(paise) } } });
+      await credit(tx, to, paise);
+    });
+    return demoTxHash();
+  },
+
   // Demo operations are atomic DB transactions: there is no pending receipt to find.
   async txReceipt() {
     return null;

@@ -194,6 +194,15 @@ export const viemAdapter: ChainAdapter = {
     return { txHash, amountInr: fromTokenUnits(bal) };
   },
 
+  async transferFromCustodial(userId, to, amountInr) {
+    assertChainWritable();
+    const account = await accountForUser(userId);
+    const amount = toTokenUnits(amountInr);
+    await assertBalance(account.address, amount);
+    await ensureGas(account.address); // the transfer is signed by the user's custodial key
+    return write(account, { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [to, amount] }, true);
+  },
+
   async txReceipt(hash) {
     try {
       const r = await publicClient.getTransactionReceipt({ hash });

@@ -42,6 +42,12 @@ export interface ChainAdapter {
   mintInr(address: string, amountInr: number): Promise<TxHash>;
   /** Mock fiat off-ramp: move the user's whole custodial balance out. null when 0. */
   withdrawAll(userId: string): Promise<{ txHash: TxHash; amountInr: number } | null>;
+  /**
+   * Move `amountInr` from the user's custodial wallet to `to` (their verified external
+   * wallet — P3.3). Spends only the withdrawable balance (never demo credit); a shortfall
+   * reverts InsufficientBalance before anything is sent.
+   */
+  transferFromCustodial(userId: string, to: string, amountInr: number): Promise<TxHash>;
 
   // ---- reconciliation ----
   /** The mined receipt of `hash`; null if unknown / not mined (always null in demo mode). */
