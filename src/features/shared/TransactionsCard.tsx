@@ -2,6 +2,7 @@ import { Card, StatusBadge } from "@/components/ui";
 import { explorerTxBase } from "@/lib/chain/config";
 import { formatInr, shortDate, shortHash } from "@/lib/format";
 import type { HistoryRow, HistoryState } from "./paymentHistory";
+import { StatementDownload } from "./StatementDownload";
 
 /*
   Transactions with receipts (payment plan P2.7) — shared by WK-12 Earnings and CL-08
@@ -68,6 +69,10 @@ export function TransactionsCard({ rows, title = "Transactions" }: { rows: Histo
           );
         })}
       </ul>
+      <div className="border-t border-line px-6 py-4">
+        <p className="mb-2.5 text-[12px] text-ink2">Account statement for a date range — every line cites its receipt.</p>
+        <StatementDownload />
+      </div>
     </Card>
   );
 }

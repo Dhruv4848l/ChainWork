@@ -36,15 +36,17 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
 ];
 
+// Fonts the receipt / statement PDFs read at runtime (src/lib/receipts/pdfKit.ts).
+const PDF_FONTS = [
+  "./node_modules/@fontsource/outfit/files/outfit-latin-{400,600}-normal.woff",
+  "./node_modules/@fontsource/noto-sans/files/noto-sans-devanagari-{400,600}-normal.woff",
+];
+
 const nextConfig: NextConfig = {
-  // The receipt PDF reads its fonts from node_modules at runtime (src/lib/receipts/pdf.ts);
-  // make sure the serverless bundle ships them.
-  outputFileTracingIncludes: {
-    "/api/receipts/**": [
-      "./node_modules/@fontsource/outfit/files/outfit-latin-{400,600}-normal.woff",
-      "./node_modules/@fontsource/noto-sans/files/noto-sans-devanagari-{400,600}-normal.woff",
-    ],
-  },
+  // Make sure the serverless bundles for the PDF routes ship the fonts.
+  outputFileTracingIncludes: Object.fromEntries(
+    ["/api/receipts/**", "/api/statements/**"].map((route) => [route, PDF_FONTS]),
+  ),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
