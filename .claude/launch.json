@@ -9,6 +9,18 @@
       "autoPort": true
     },
     {
+      "name": "web-webpack",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:webpack"],
+      "port": 3000
+    },
+    {
+      "name": "web-prod",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "start", "-p", "3100"],
+      "port": 3100
+    },
+    {
       "name": "chain",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "contracts", "run", "node"],

@@ -1,6 +1,6 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 done · P1 code complete, UI check paused (2026-09-28) — see PROGRESS.md "Resume here"**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0 done · P1 done (2026-10-02) · next: P2 — see PROGRESS.md "Resume here"**_
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:

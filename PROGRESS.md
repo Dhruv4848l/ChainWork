@@ -343,7 +343,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | # | Phase | Status |
 |---|---|---|
 | P0 | Foundations & safety — payment mode, chain adapters, key/role/gas guards, health check, mode banner | ✅ Done (2026-09-28) |
-| P1 | Payment ledger, transaction outbox, state machines, reconciler | 🟡 Code complete + service-verified; UI check paused (2026-09-28) |
+| P1 | Payment ledger, transaction outbox, state machines, reconciler | ✅ Done (2026-10-02 — UI path verified) |
 | P2 | PDF receipts (success + failed) and statements | — |
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | — |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | — |
@@ -373,7 +373,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   health is green locally and flags all four Amoy problems (public keys, 2× missing role,
   no gas).
 
-**P1 — what changed (paused 2026-09-28, see "Resume here")**
+**P1 — what changed (done 2026-10-02)**
 - **`PaymentTransaction` + `LedgerEntry`** (migrations `payment_ledger`, `phase_reconcile_cursor`).
   `src/lib/payments/service.ts` `runPayment()` records every attempt BEFORE the chain call
   (INITIATED → SUBMITTED → CONFIRMED | FAILED | CANCELLED), then applies phase status +
@@ -394,12 +394,26 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   recorded double-fund failure, crash finished by reconciler, drift repaired, dropped tx
   failed, concurrent double-fund → exactly one wins, ledger once); cron tick clean.
 
+- **UI path verified (2026-10-02)** on local PG17 + Hardhat, test hire
+  `cmuqhebhy0001fm2scqjow7dx` (Imran K. ↔ Ravi Kumar, ₹1,500 + ₹2,500): offer → milestone
+  plan → both signed → fund → deliver → approve, all through the real UI. Result: FUND and
+  RELEASE PaymentTransactions CONFIRMED (tx hash, block, gas fee), balanced ledger rows
+  (client WALLET→ESCROW, then ESCROW→worker WALLET), legacy EscrowTransactions, DB phase =
+  chain phase (RELEASED), phase 2 unlocked, worker's live on-chain balance 0 → ₹1,500.
+- **Dev-server fix:** on this machine Turbopack dev panics on every HMR version check
+  ("Next.js package not found"), which makes every open tab full-reload in a loop. Use
+  `npm run dev:webpack` (launch config `web-webpack`; `scripts/start-local.cmd` uses it).
+  Production builds are unaffected.
+
 **Resume here**
-1. Browser check of the real UI path was mid-flow on the LOCAL test hire
-   `cmuk7brx10001iu18a6n21s7a` (Imran K. ↔ Ravi Kumar, 2 phases ₹1,500 + ₹2,500):
-   client has signed; the worker contract page was filled but **Sign was not clicked**.
-   Next: worker signs → client funds phase 1 → worker delivers → client approves → check
-   the PaymentTransaction/LedgerEntry rows and the Payments page.
-2. Then commit P1 as done and start P2 (PDF receipts).
-3. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
+1. Start **P2 — PDF receipts** (docs/PAYMENT_SYSTEM_PLAN.md §3 P2).
+2. Found during the P1 UI check, belongs to **P3** (wallet model): in `testnet` mode the
+   wallet card still shows the ₹40,000 demo credit, and funding mints test tokens behind
+   the scenes (W2). "Next phase funding due" on CL-08 lists a phase whose predecessor
+   isn't released yet.
+3. Local test data: an earlier test hire `cmuq7pidl0001fmxcofn2a0cc` was funded on a chain
+   that was later restarted, so its phase 1 is DB-ahead of the chain (VERIFICATION_WINDOW_OPEN
+   in the DB, nothing on-chain). The reconciler deliberately ignores DB-ahead drift; delete
+   that test hire or reset the local DB before relying on cron auto-release locally.
+4. Before deploying to Neon: `npm run db:deploy` (migrations `demo_chain`, `payment_ledger`,
    `phase_reconcile_cursor`), then run the backfill script against Neon.

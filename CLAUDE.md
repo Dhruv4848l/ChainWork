@@ -575,6 +575,9 @@ Three gaps between the built product and the story we demo were closed here.
   Hardhat phrase off chain 31337. Relayer needs ATTESTOR+DISPUTE roles:
   `RELAYER_ADDRESS=0x… npx hardhat run scripts/grant-roles.js --network amoy`.
   `GET /api/health/chain` must be ok before switching production to `testnet`.
+- **Dev server on Windows:** Turbopack dev panics on every HMR check here ("Next.js package
+  not found") → endless full-page reloads. Use `npm run dev:webpack` (launch config
+  `web-webpack`). The Next dev badge also covers the sidebar "Log out" button in short viewports.
 - **Local dev profile:** gitignored `.env.local` (loaded over `.env` by Next) points at
   local PG18 (`chainwork_platform`/`chainwork_admin`) + the local Hardhat node + mock
   SMS/email. For Prisma CLI / scripts: `set -a; . ./.env.local; set +a` first.
