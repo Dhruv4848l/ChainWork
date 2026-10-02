@@ -36,6 +36,8 @@ export interface ExpectedFunding {
   assetAddress: string | null;
   /** Quoted base units. */
   assetAmount: string;
+  /** How long to wait for the receipt before treating it as pending (default 60 s). */
+  receiptTimeoutMs?: number;
 }
 
 const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -43,7 +45,7 @@ const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 export async function verifyPhaseFunding(x: ExpectedFunding): Promise<MinedTx & { from: string; paidRaw: bigint }> {
   // Not mined within a minute → viem's timeout error, classified as pending: the payment
   // stays SUBMITTED and the reconciler finishes it.
-  const receipt = await client.waitForTransactionReceipt({ hash: x.txHash, timeout: 60_000 });
+  const receipt = await client.waitForTransactionReceipt({ hash: x.txHash, timeout: x.receiptTimeoutMs ?? 60_000 });
   if (receipt.status !== "success") {
     throw new FundingVerificationError("REVERTED", "The transaction failed on-chain (reverted). No money was moved.");
   }

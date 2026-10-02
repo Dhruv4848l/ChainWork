@@ -25,7 +25,8 @@
     "db:reset": "prisma migrate reset --schema prisma/platform/schema.prisma --force && prisma migrate reset --schema prisma/admin/schema.prisma --force && npm run db:seed",
     "postinstall": "npm run db:generate",
     "db:deploy": "prisma migrate deploy --schema prisma/platform/schema.prisma && prisma migrate deploy --schema prisma/admin/schema.prisma",
-    "script": "node --conditions react-server --import tsx"
+    "script": "node --conditions react-server --import tsx",
+    "test:integration": "node --conditions react-server --env-file-if-exists=.env --env-file-if-exists=.env.local --import tsx --test --test-concurrency=1 \"tests/integration/*.int.test.mts\""
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",

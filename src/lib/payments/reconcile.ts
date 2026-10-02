@@ -7,6 +7,11 @@ import { confirmPayment, failPayment, initiatePayment } from "./service";
 import { failureReason } from "./errors";
 import { escrowAddressLabel } from "./parties";
 import { FundingVerificationError, verifyPhaseFunding } from "@/lib/chain/verifyFunding";
+import { TOKEN_ADDRESS } from "@/lib/chain/config";
+import { toTokenUnits } from "@/lib/chain/viemAdapter";
+import type { EscrowView } from "@/lib/chain/types";
+import { meetsQuote } from "./quoteMath";
+import type { PaymentAsset } from "./service";
 
 /*
   THE RECONCILER (payment plan P1.6, fixes F7). Runs at the end of every cron tick.
@@ -115,6 +120,47 @@ async function isWorkersAddress(workerId: string, address: string): Promise<bool
   return Boolean(w && (w.custodialAddress.toLowerCase() === a || w.externalAddress?.toLowerCase() === a));
 }
 
+const sameAddr = (a: string | null | undefined, b: string | null | undefined) => (a ?? "").toLowerCase() === (b ?? "").toLowerCase();
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+type Adoption =
+  | { ok: true; signer: "RELAYER" | "EXTERNAL_WALLET"; asset: PaymentAsset | null }
+  | { ok: false; reason: string };
+
+/**
+ * May a funding found on-chain (but missing from the DB) be adopted as this phase's FUND?
+ * Only if it pays THIS worker the FULL amount owed: ≥ the phase's rupees in cwINR, or — for
+ * any other asset — matches a quote issued for this phase (asset, worker, amount within
+ * tolerance). Anything else (underpaid, wrong currency, wrong worker) is flagged, never
+ * adopted: adopting it would mark a phase funded that isn't (P7 security regression).
+ */
+async function adoptableFunding(phase: { id: string; amount: unknown; hire: { clientId: string; workerId: string } }, onchain: EscrowView): Promise<Adoption> {
+  if (!(await isWorkersAddress(phase.hire.workerId, onchain.worker))) {
+    return { ok: false, reason: `funded on-chain to unexpected worker ${onchain.worker}` };
+  }
+  const payerWallet = await platformDb.wallet.findUnique({ where: { userId: phase.hire.clientId }, select: { custodialAddress: true } });
+  const fromCustodial = sameAddr(payerWallet?.custodialAddress, onchain.client);
+
+  if (sameAddr(onchain.asset, TOKEN_ADDRESS)) {
+    if (onchain.amountRaw < toTokenUnits(String(phase.amount))) {
+      return { ok: false, reason: `funded on-chain with less cwINR than the phase amount` };
+    }
+    return { ok: true, signer: fromCustodial ? "RELAYER" : "EXTERNAL_WALLET", asset: null };
+  }
+
+  const assetAddress = sameAddr(onchain.asset, ZERO_ADDRESS) ? null : onchain.asset;
+  const quotes = await platformDb.paymentQuote.findMany({ where: { phaseId: phase.id }, orderBy: { createdAt: "desc" } });
+  const q = quotes.find(
+    (x) => sameAddr(x.assetAddress, assetAddress) && sameAddr(x.workerAddress, onchain.worker) && meetsQuote(onchain.amountRaw, BigInt(x.assetAmount)),
+  );
+  if (!q) return { ok: false, reason: `funded on-chain in ${onchain.asset} without a matching quote (wrong currency or underpaid)` };
+  return {
+    ok: true,
+    signer: "EXTERNAL_WALLET",
+    asset: { symbol: q.assetSymbol, address: q.assetAddress, chainId: q.chainId, amount: onchain.amountRaw.toString(), quoteId: q.id, rate: Number(q.rate) },
+  };
+}
+
 const LIVE_PHASE_STATUSES: PhaseStatus[] = ["PENDING_FUNDING", "FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN", "DISPUTED"];
 
 async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
@@ -134,10 +180,11 @@ async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
     try {
       const onchain = await chain.readEscrow(phase.id);
       const fix = repairFor(phase.status, onchain.status);
-      if (fix?.kind === "FUND" && !(await isWorkersAddress(phase.hire.workerId, onchain.worker))) {
-        // Funded on-chain, but to an address that isn't this worker's (P6: a tampered
-        // wallet payment). Never adopt it — flag it for an admin instead.
-        errors.push(`drift ${phase.id}: funded on-chain to unexpected worker ${onchain.worker} — not adopted`);
+      const adoption = fix?.kind === "FUND" ? await adoptableFunding(phase, onchain) : null;
+      if (adoption && !adoption.ok) {
+        // A tampered / short wallet payment sits in escrow. Never adopt it — flag it for
+        // an admin (the money can be refunded to the client by the relayer).
+        errors.push(`drift ${phase.id}: ${adoption.reason} — not adopted`);
       } else if (fix) {
         // A SPLIT's worker share can't be recovered from the escrow's final state, so a
         // repaired split records the movement without ledger shares (see memo).
@@ -145,8 +192,9 @@ async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
         const payment = await initiatePayment({
           kind: fix.kind,
           operation: fix.operation,
-          signer: "RELAYER",
+          signer: adoption?.ok ? adoption.signer : "RELAYER",
           amountInr: Number(phase.amount),
+          asset: adoption?.ok ? adoption.asset : undefined,
           payerUserId: phase.hire.clientId,
           payeeUserId: toClient ? phase.hire.clientId : phase.hire.workerId,
           fromAddress: fix.kind === "FUND" ? onchain.client : escrowAddressLabel(),

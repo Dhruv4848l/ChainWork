@@ -466,5 +466,12 @@ describe("PhaseEscrow", () => {
       expect(await escrow.hasRole(await escrow.DEFAULT_ADMIN_ROLE(), relayer.address)).to.equal(false);
       expect(await escrow.hasRole(await escrow.PAUSER_ROLE(), relayer.address)).to.equal(false);
     });
+
+    it("only the admin can grant — a non-admin running the script is refused", async () => {
+      const { escrow, worker, other: relayer } = await loadFixture(deploy);
+      await expect(grantRelayerRoles(escrow.connect(worker), relayer.address, silent))
+        .to.be.revertedWithCustomError(escrow, "AccessControlUnauthorizedAccount");
+      expect(await escrow.hasRole(await escrow.ATTESTOR_ROLE(), relayer.address)).to.equal(false);
+    });
   });
 });
