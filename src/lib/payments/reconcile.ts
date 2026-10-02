@@ -6,6 +6,7 @@ import type { PaymentTransaction, PhaseStatus } from "@/generated/platform";
 import { confirmPayment, failPayment, initiatePayment } from "./service";
 import { failureReason } from "./errors";
 import { escrowAddressLabel } from "./parties";
+import { FundingVerificationError, verifyPhaseFunding } from "@/lib/chain/verifyFunding";
 
 /*
   THE RECONCILER (payment plan P1.6, fixes F7). Runs at the end of every cron tick.
@@ -50,6 +51,22 @@ async function reconcilePayment(p: PaymentTransaction, now: Date): Promise<boole
 
   if (p.txHash && p.mode !== "DEMO") {
     const receipt = await chain.adapter().txReceipt(p.txHash as `0x${string}`);
+    if (receipt?.status === "success" && p.kind === "FUND" && p.signer === "EXTERNAL_WALLET") {
+      // Paid from the payer's own wallet (P6): a successful tx isn't enough — it must match
+      // the quote exactly as at submission time.
+      const quote = p.quoteId ? await platformDb.paymentQuote.findUnique({ where: { id: p.quoteId } }) : null;
+      try {
+        if (!quote || !p.phaseId) throw new FundingVerificationError("NO_QUOTE", "This payment has no quote to check it against.");
+        await verifyPhaseFunding({ txHash: p.txHash as `0x${string}`, phaseId: p.phaseId, workerAddress: quote.workerAddress, assetAddress: quote.assetAddress, assetAmount: quote.assetAmount });
+      } catch (e) {
+        if (e instanceof FundingVerificationError) {
+          await failPayment(p.id, { code: e.code, reason: e.message, reconciled: true });
+          return true;
+        }
+        throw e;
+      }
+      return Boolean(await confirmPayment(p.id, { txHash: p.txHash, ...receipt }, { reconciled: true }));
+    }
     if (receipt?.status === "success") {
       return Boolean(await confirmPayment(p.id, { txHash: p.txHash, ...receipt }, { reconciled: true }));
     }
@@ -91,6 +108,13 @@ function repairFor(dbStatus: PhaseStatus, onchain: EscrowStatus): { kind: "FUND"
   return null;
 }
 
+/** Is `address` one of this worker's own payout addresses (custodial or linked)? */
+async function isWorkersAddress(workerId: string, address: string): Promise<boolean> {
+  const w = await platformDb.wallet.findUnique({ where: { userId: workerId }, select: { custodialAddress: true, externalAddress: true } });
+  const a = address.toLowerCase();
+  return Boolean(w && (w.custodialAddress.toLowerCase() === a || w.externalAddress?.toLowerCase() === a));
+}
+
 const LIVE_PHASE_STATUSES: PhaseStatus[] = ["PENDING_FUNDING", "FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN", "DISPUTED"];
 
 async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
@@ -110,7 +134,11 @@ async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
     try {
       const onchain = await chain.readEscrow(phase.id);
       const fix = repairFor(phase.status, onchain.status);
-      if (fix) {
+      if (fix?.kind === "FUND" && !(await isWorkersAddress(phase.hire.workerId, onchain.worker))) {
+        // Funded on-chain, but to an address that isn't this worker's (P6: a tampered
+        // wallet payment). Never adopt it — flag it for an admin instead.
+        errors.push(`drift ${phase.id}: funded on-chain to unexpected worker ${onchain.worker} — not adopted`);
+      } else if (fix) {
         // A SPLIT's worker share can't be recovered from the escrow's final state, so a
         // repaired split records the movement without ledger shares (see memo).
         const toClient = fix.kind === "REFUND";

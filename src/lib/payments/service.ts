@@ -49,6 +49,24 @@ export interface PaymentSpec {
   splitWorkerBps?: number | null;
   phaseId?: string | null;
   hireId?: string | null;
+  /**
+   * What actually moves (payment plan P6). Omitted = the cwINR stablecoin at ₹1, except
+   * for exits (release / refund / split) of a phase, which inherit the asset that phase
+   * was funded in.
+   */
+  asset?: PaymentAsset | null;
+}
+
+export interface PaymentAsset {
+  symbol: string;
+  /** null = native coin. */
+  address: string | null;
+  chainId: number | null;
+  /** Exact base units. */
+  amount: string;
+  quoteId?: string | null;
+  /** ₹ per whole unit. */
+  rate?: number | null;
 }
 
 export type PaymentOutcome =
@@ -101,8 +119,9 @@ export function ledgerRows(p: PaymentTransaction): Prisma.LedgerEntryCreateManyI
   switch (p.kind) {
     case "FUND":
       return [
-        ...row(p.payerUserId, "WALLET", "DEBIT", amt, "Funded phase escrow"),
-        ...row(p.payerUserId, "ESCROW", "CREDIT", amt, "Locked in escrow"),
+        // Paid from the payer's OWN wallet (P6): their ChainWork wallet didn't change.
+        ...(p.signer === "EXTERNAL_WALLET" ? [] : row(p.payerUserId, "WALLET", "DEBIT", amt, "Funded phase escrow")),
+        ...row(p.payerUserId, "ESCROW", "CREDIT", amt, p.signer === "EXTERNAL_WALLET" ? `Locked in escrow from your wallet (${p.assetSymbol})` : "Locked in escrow"),
       ];
     case "RELEASE":
       return [
@@ -224,13 +243,13 @@ export async function confirmPayment(
 /** Mark FAILED / CANCELLED and issue its (failure) receipt atomically. Idempotent. */
 export async function failPayment(
   paymentId: string,
-  f: { code: string; reason: string; cancelled?: boolean; reconciled?: boolean },
+  f: { code: string; reason: string; cancelled?: boolean; expired?: boolean; reconciled?: boolean },
 ): Promise<string | null> {
   return platformDb.$transaction(async (tx) => {
     const res = await tx.paymentTransaction.updateMany({
       where: { id: paymentId, status: { in: ["INITIATED", "SUBMITTED"] } },
       data: {
-        status: f.cancelled ? "CANCELLED" : "FAILED",
+        status: f.expired ? "EXPIRED" : f.cancelled ? "CANCELLED" : "FAILED",
         failureCode: f.code,
         failureReason: f.reason,
         finalizedAt: new Date(),
@@ -244,8 +263,22 @@ export async function failPayment(
 }
 
 /** Create the INITIATED record for an attempt. */
+/** The asset a phase was funded in (from its confirmed FUND payment), for its exits. */
+async function phaseFundingAsset(phaseId: string): Promise<PaymentAsset | null> {
+  const f = await platformDb.paymentTransaction.findFirst({
+    where: { phaseId, kind: "FUND", status: "CONFIRMED" },
+    orderBy: { finalizedAt: "desc" },
+    select: { assetSymbol: true, assetAddress: true, assetChainId: true, assetAmount: true, quoteRate: true },
+  });
+  if (!f || f.assetSymbol === "cwINR") return null;
+  return { symbol: f.assetSymbol, address: f.assetAddress, chainId: f.assetChainId, amount: f.assetAmount ?? "0", rate: f.quoteRate ? Number(f.quoteRate) : null };
+}
+
+const EXIT_KINDS = new Set<PaymentKind>(["RELEASE", "REFUND", "SPLIT"]);
+
 export async function initiatePayment(spec: PaymentSpec): Promise<PaymentTransaction> {
   const mode = dbMode();
+  const asset = spec.asset ?? (spec.phaseId && EXIT_KINDS.has(spec.kind) ? await phaseFundingAsset(spec.phaseId) : null);
   return platformDb.paymentTransaction.create({
     data: {
       kind: spec.kind,
@@ -254,9 +287,12 @@ export async function initiatePayment(spec: PaymentSpec): Promise<PaymentTransac
       operation: spec.operation,
       signer: spec.signer,
       amountInr: new Prisma.Decimal(spec.amountInr),
-      assetSymbol: "cwINR",
-      assetChainId: mode === "DEMO" ? null : CHAIN_ID,
-      assetAmount: toTokenUnits(spec.amountInr).toString(),
+      assetSymbol: asset?.symbol ?? "cwINR",
+      assetAddress: asset?.address ?? null,
+      assetChainId: asset ? asset.chainId : mode === "DEMO" ? null : CHAIN_ID,
+      assetAmount: asset?.amount ?? toTokenUnits(spec.amountInr).toString(),
+      quoteId: asset?.quoteId ?? null,
+      quoteRate: asset?.rate != null ? new Prisma.Decimal(asset.rate) : null,
       payerUserId: spec.payerUserId ?? null,
       payeeUserId: spec.payeeUserId ?? null,
       fromAddress: spec.fromAddress ?? null,
@@ -316,6 +352,68 @@ export async function runPayment(
   const confirmed = await confirmPayment(
     payment.id,
     { txHash, blockNumber: m?.blockNumber, gasUsed: m?.gasUsed, effectiveGasPrice: m?.effectiveGasPrice },
+    { onConfirmedTx: hooks.onConfirmedTx },
+  );
+  if (confirmed && hooks.afterConfirmed) {
+    try {
+      await hooks.afterConfirmed(confirmed, confirmed.receipt);
+    } catch (e) {
+      console.warn(`[payments] after-confirm hook for ${payment.id} failed:`, (e as Error).message?.slice(0, 160));
+    }
+  }
+  return { ok: true, paymentId: payment.id, txHash, receiptNo: confirmed?.receipt.receiptNo ?? null };
+}
+
+/**
+ * Record a payment whose chain transaction the PAYER already sent from their own wallet
+ * (payment plan P6.5). The attempt is recorded first (SUBMITTED with its hash), then
+ * `verify` checks the mined transaction against what was agreed; only a verified payment
+ * is confirmed (phase, ledger, receipt). A failed check is recorded as FAILED with a
+ * receipt and the reason. Never throws for a payment failure.
+ */
+export async function recordVerifiedPayment(
+  spec: PaymentSpec,
+  txHash: TxHash,
+  verify: () => Promise<MinedTx & { from?: string }>,
+  hooks: RunPaymentHooks = {},
+): Promise<PaymentOutcome> {
+  // A transaction can pay for exactly one thing: refuse a replayed hash before recording.
+  const already = await platformDb.paymentTransaction.findUnique({ where: { txHash }, select: { id: true } });
+  if (already) {
+    return { ok: false, paymentId: already.id, code: "DUPLICATE_TX", reason: "That transaction has already been recorded.", pending: false, cancelled: false, receiptNo: null };
+  }
+  const payment = await initiatePayment(spec);
+  await platformDb.paymentTransaction.updateMany({
+    where: { id: payment.id, status: "INITIATED" },
+    data: { status: "SUBMITTED", txHash, submittedAt: new Date() },
+  });
+  let mined: MinedTx & { from?: string };
+  try {
+    mined = await verify();
+  } catch (e) {
+    const c = classifyPaymentError(e);
+    // A verifier's own finding carries a specific code + plain-language reason; anything
+    // else (RPC errors, reverts) is classified like any other chain failure.
+    const own = e instanceof Error && e.name === "FundingVerificationError";
+    const code = own ? (e as unknown as { code: string }).code : c.code;
+    const reason = own ? (e as Error).message : c.reason;
+    if (c.pending) {
+      return { ok: false, paymentId: payment.id, code: c.code, reason: c.reason, pending: true, cancelled: false, receiptNo: null };
+    }
+    const receiptNo = await failPayment(payment.id, { code, reason });
+    return { ok: false, paymentId: payment.id, code, reason, pending: false, cancelled: false, receiptNo };
+  }
+  // Record who actually paid and exactly how much arrived (may exceed the quote).
+  const paidRaw = (mined as { paidRaw?: bigint }).paidRaw;
+  if (mined.from || paidRaw != null) {
+    await platformDb.paymentTransaction.update({
+      where: { id: payment.id },
+      data: { ...(mined.from ? { fromAddress: mined.from } : {}), ...(paidRaw != null ? { assetAmount: paidRaw.toString() } : {}) },
+    });
+  }
+  const confirmed = await confirmPayment(
+    payment.id,
+    { txHash, blockNumber: mined.blockNumber, gasUsed: mined.gasUsed, effectiveGasPrice: mined.effectiveGasPrice },
     { onConfirmedTx: hooks.onConfirmedTx },
   );
   if (confirmed && hooks.afterConfirmed) {

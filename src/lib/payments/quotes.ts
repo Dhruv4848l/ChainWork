@@ -54,6 +54,16 @@ export async function createQuote(phaseId: string, userId: string, assetKey: str
   const blocker = await fundingBlocker(phase, userId);
   if (blocker || !phase) return { ok: false, error: blocker ?? "Phase not found." };
 
+  // Crypto other than the rupee stablecoin can only go to a worker who'll receive it in their
+  // OWN wallet: a ChainWork (custodial) wallet holds rupees, and couldn't pay out USDT / POL.
+  const workerAddress = await payoutAddressFor(phase.hire.workerId);
+  if (asset.key !== "cwINR") {
+    const w = await platformDb.wallet.findUnique({ where: { userId: phase.hire.workerId }, select: { custodialAddress: true } });
+    if (!w || w.custodialAddress.toLowerCase() === workerAddress.toLowerCase()) {
+      return { ok: false, error: `${phase.hire.worker.name} is paid into their ChainWork wallet, which holds rupees — pay this phase in cwINR. Other currencies open once they link their own wallet.` };
+    }
+  }
+
   let rate = asset.fixedInr ?? 0;
   let stale = false;
   if (!asset.fixedInr) {
@@ -72,7 +82,7 @@ export async function createQuote(phaseId: string, userId: string, assetKey: str
       chainId: mode === "demo" ? null : CHAIN_ID,
       rate: new Prisma.Decimal(rate), amountInr: new Prisma.Decimal(amountInr),
       assetAmount: assetAmountFor(amountInr, rate, asset.decimals).toString(),
-      workerAddress: await payoutAddressFor(phase.hire.workerId),
+      workerAddress,
       escrowAddress: mode === "demo" ? null : ESCROW_ADDRESS,
       pricesStale: stale,
       expiresAt: new Date(Date.now() + QUOTE_TTL_MS),
