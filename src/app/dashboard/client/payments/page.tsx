@@ -9,13 +9,16 @@ import { FundDueButton } from "@/features/client/FundDueButton";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { TransactionsCard } from "@/features/shared/TransactionsCard";
+import { getPaymentHistory } from "@/features/shared/paymentHistory";
 
 export default async function ClientPaymentsPage() {
   const user = await requireRole("CLIENT");
-  const [pay, profile, wallet] = await Promise.all([
+  const [pay, profile, wallet, history] = await Promise.all([
     getClientPayments(user.id),
     getClientProfile(user.id),
     getWalletSummary(user.id),
+    getPaymentHistory(user.id),
   ]);
   const reliability = Math.round(profile?.clientProfile?.escrowReliabilityScore ?? 100);
 
@@ -80,6 +83,10 @@ export default async function ClientPaymentsPage() {
             );
           })}
         </Card>
+      </div>
+
+      <div className="mt-3.5">
+        <TransactionsCard rows={history} />
       </div>
     </div>
   );

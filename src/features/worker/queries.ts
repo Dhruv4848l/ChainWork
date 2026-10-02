@@ -112,7 +112,7 @@ export async function getWorkerEarnings(userId: string) {
       where: { workerId: userId },
       include: {
         job: true,
-        phases: { include: { escrowTransactions: true }, orderBy: { index: "asc" } },
+        phases: { orderBy: { index: "asc" } },
       },
     }),
   ]);
@@ -121,16 +121,13 @@ export async function getWorkerEarnings(userId: string) {
   const pending = phases.filter((p) =>
     ["FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN"].includes(p.status)
   );
-  const txs = phases
-    .flatMap((p) => p.escrowTransactions.map((t) => ({ ...t, phaseName: p.name })))
-    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
   const released = phases
     .filter((p) => p.status === "RELEASED")
     .reduce((s, p) => s + Number(p.amount), 0);
   const pendingTotal = pending.reduce((s, p) => s + Number(p.amount), 0);
 
-  return { wallet, pending, txs, released, pendingTotal };
+  // Transaction history (with receipts) comes from the payment ledger: features/shared/paymentHistory.ts.
+  return { wallet, pending, released, pendingTotal };
 }
 
 export async function getWorkerMessageThreads(userId: string) {

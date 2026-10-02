@@ -1,24 +1,23 @@
-import { Card, StatusBadge } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { PageTitle, StatCard } from "@/features/shared/dashboard-ui";
 import { phaseStatusDisplay } from "@/features/shared/status";
 import { requireRole } from "@/lib/auth/guards";
 import { getWorkerEarnings } from "@/features/worker/queries";
 import { getWalletSummary } from "@/lib/chain/wallet";
-import { explorerTxBase } from "@/lib/chain/config";
 import { WithdrawButton } from "@/features/worker/WithdrawButton";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
-import { formatInr, shortDate, shortHash } from "@/lib/format";
+import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
-
-const TX_STATUS_TONE = { CONFIRMED: "success", PENDING: "warning", FAILED: "danger" } as const;
+import { TransactionsCard } from "@/features/shared/TransactionsCard";
+import { getPaymentHistory } from "@/features/shared/paymentHistory";
 
 export default async function EarningsPage() {
   const user = await requireRole("WORKER");
-  const [{ pending, txs, released, pendingTotal }, wallet] = await Promise.all([
+  const [{ pending, released, pendingTotal }, wallet, history] = await Promise.all([
     getWorkerEarnings(user.id),
     getWalletSummary(user.id), // provisions custodial + reads the live on-chain balance
+    getPaymentHistory(user.id),
   ]);
-  const explorer = explorerTxBase();
 
   return (
     <div>
@@ -71,29 +70,7 @@ export default async function EarningsPage() {
           </Card>
         </div>
 
-        <Card className="overflow-hidden p-0">
-          <div className="grid grid-cols-[1.6fr_1fr_1fr_1.4fr] gap-2.5 border-b border-line px-6 py-3.5 text-[10.5px] font-semibold uppercase tracking-wider text-ink3">
-            <span>Transaction</span><span>Amount</span><span>Status</span><span>On-chain</span>
-          </div>
-          {txs.length === 0 && <p className="p-6 text-sm text-ink3">No transactions yet.</p>}
-          {txs.map((t) => (
-            <div key={t.id} className="grid grid-cols-[1.6fr_1fr_1fr_1.4fr] items-center gap-2.5 border-b border-hair px-6 py-3.5 last:border-b-0">
-              <span>
-                <span className="block text-[13px] font-medium text-ink">{t.type} · {t.phaseName}</span>
-                <span className="block text-[11px] text-ink3">{shortDate(t.createdAt)}</span>
-              </span>
-              <span className="text-[13px] font-semibold text-bronze">{formatInr(Number(t.amount))}</span>
-              <span><StatusBadge tone={TX_STATUS_TONE[t.status as keyof typeof TX_STATUS_TONE] ?? "draft"}>{t.status}</StatusBadge></span>
-              {explorer && t.onChainTxHash ? (
-                <a href={`${explorer}${t.onChainTxHash}`} target="_blank" rel="noreferrer" className="font-mono text-[11px] text-[#8FC7E8] hover:underline">
-                  {shortHash(t.onChainTxHash)}
-                </a>
-              ) : (
-                <span className="font-mono text-[11px] text-ink3" title="No explorer on the local chain">{shortHash(t.onChainTxHash)}</span>
-              )}
-            </div>
-          ))}
-        </Card>
+        <TransactionsCard rows={history} />
       </div>
     </div>
   );
