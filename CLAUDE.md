@@ -621,6 +621,19 @@ Three gaps between the built product and the story we demo were closed here.
   `src/lib/escrow/fundGates.ts` — every funding path calls `fundingBlocker()`. The payment
   window is `src/features/client/checkout/`; it must stay mounted while open (the page
   re-renders the phase under it).
+- **Tests (P7) — four layers:** `npm test` (pure unit), `npm run test:contracts`,
+  `npm run test:integration` (`tests/integration/*.int.test.mts`, real Postgres + Hardhat,
+  refuses off chain 31337), `npm run test:e2e` (Playwright, `e2e/`; two `next start` servers
+  from one build, testnet :3100 + demo :3101; injected EIP-6963 test wallet in
+  `e2e/support/wallet.ts`). New tests make fresh users via `tests/fixtures.ts` — never mutate
+  the seeded demo accounts. `PW_CHROMIUM=<chrome.exe>` reuses an installed Chromium. A money
+  bug fix gets a regression test in `tests/integration/`.
+- **Demo capture:** `npm run build && npm run demo:serve` (production build + dev outbox,
+  localhost only), then `npm run demo:capture`. Not the webpack dev server — it drops server
+  actions mid-compile. Screenshot numbers are referenced by DEMO_WALKTHROUGH.md: don't add
+  shots mid-run.
+- **Go-live:** `docs/RUNBOOK_DEMO_TO_TESTNET.md`; `/api/health/chain` must be all green
+  (includes v2 + asset allowlist checks).
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)

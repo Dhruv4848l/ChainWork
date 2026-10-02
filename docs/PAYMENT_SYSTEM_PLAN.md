@@ -329,3 +329,10 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
   estimate yet. A payment sent after its quote expired is still accepted if the mined amount
   meets the quote: the money is already locked in escrow, refusing it would only strand it.
   Payments confirm on the first mined block, as before.
+- **P7 (2026-10-03):** E2E runs against two `next start` servers from one build (testnet +
+  demo) rather than switching one server's mode. The injected test wallet forwards signing
+  to the unlocked Hardhat account, so signatures and transactions are real. Integration tests
+  live in `tests/` (they need the real stack, so they're kept out of `npm test`). Two security
+  fixes came out of the suite (reconciler adoption, WalletConnect server leak — see
+  SECURITY.md). The runbook adds a step the plan didn't list: close demo-money escrows
+  before switching, because they don't exist on-chain.

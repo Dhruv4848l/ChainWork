@@ -62,6 +62,24 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   by 31 tests including a live reentrancy attack and a no-drain assertion.
 - **[PRE-MAINNET] Professional audit.** Non-negotiable before mainnet — top of the checklist.
 
+## Payment-plan findings (P6–P7, 2026-10)
+
+- **[FIXED] Reconciler adopted short / wrong-currency fundings.** Drift repair recorded any
+  on-chain funding of a phase to the right worker as FUNDED — including one the server had
+  just refused as underpaid or in the wrong asset. It now adopts only a full cwINR funding or
+  one matching a quote for that phase (asset, worker, amount within 1 %) and flags anything
+  else for an admin. Regression tests: `tests/integration/payments.int.test.mts`.
+- **[FIXED] Wallet payments trusted only after on-chain verification.** A payer-sent funding
+  is checked against our contract's `PhaseFunded` event (phase, worker, asset, amount) before
+  anything moves; replayed, forged, unrelated, wrong-phase and wrong-worker transactions are
+  refused with a failed receipt. Same test file.
+- **[FIXED] WalletConnect initialised on every server render** (relay client + listeners
+  leaked per request). Its setup now runs only in the browser.
+- **[OK] Receipts** return 404 (not 403) to anyone but the payer, payee or a payments admin —
+  E2E-tested.
+- **[OPEN] Flagged escrows need an admin action.** "Not adopted" escrows show only in the
+  cron log; add an admin view + refund-to-payer before real users pay from their own wallets.
+
 ## Summary
 One real finding fixed (login rate limiting); the standing access-control, session, injection, and
 secret controls hold. Remaining items are production-infra (shared rate-limit store, HSM custody,

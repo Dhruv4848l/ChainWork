@@ -6,6 +6,8 @@ import {
   LOCAL_CHAIN_ID,
   ESCROW_ADDRESS,
   TOKEN_ADDRESS,
+  USDT_ADDRESS,
+  USDC_ADDRESS,
   phaseEscrowAbi,
   activeChain,
   usesPublicTestMnemonic,
@@ -81,6 +83,33 @@ export async function getChainHealth(): Promise<ChainHealth> {
     checks.push({ name: "stablecoin contract", ok: tokenOk, detail: tokenOk ? TOKEN_ADDRESS : `no contract at "${TOKEN_ADDRESS}"` });
 
     if (escrowOk) {
+      // P6: the app pays in several assets, which needs PhaseEscrow v2 with each one
+      // allowlisted. A v1 contract has no allowedAsset() — the read reverts.
+      const assets: [string, string][] = [
+        ["cwINR", TOKEN_ADDRESS],
+        ...(USDT_ADDRESS ? [["USDT", USDT_ADDRESS] as [string, string]] : []),
+        ...(USDC_ADDRESS ? [["USDC", USDC_ADDRESS] as [string, string]] : []),
+        ["native coin", "0x0000000000000000000000000000000000000000"],
+      ];
+      for (const [label, address] of assets) {
+        let allowed: boolean | null = null;
+        try {
+          allowed = (await pc.readContract({ address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "allowedAsset", args: [address] })) as boolean;
+        } catch {
+          allowed = null;
+        }
+        checks.push({
+          name: `escrow asset ${label}`,
+          ok: allowed === true,
+          detail:
+            allowed === null
+              ? "escrow is not PhaseEscrow v2 — redeploy (contracts/scripts/deploy.js)"
+              : allowed
+                ? "allowlisted"
+                : "not allowlisted — call setAssetAllowed with the deployer key",
+        });
+      }
+
       for (const role of ["ATTESTOR_ROLE", "DISPUTE_ROLE"]) {
         const granted = (await pc.readContract({
           address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "hasRole", args: [keccak256(toHex(role)), relayer],

@@ -349,7 +349,7 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | ✅ Done (2026-10-02) — WalletConnect needs a project id |
 | P5 | Live wallet tracker + rolling ticker | ✅ Done (2026-10-02) |
 | P6 | Multi-crypto payment window (PhaseEscrow v2) | ✅ Done (2026-10-02) — Polygon set (6a); Amoy redeploy is a user step |
-| P7 | Hardening, E2E tests, "turn off demo money" runbook | — |
+| P7 | Hardening, E2E tests, "turn off demo money" runbook | ✅ Done (2026-10-03) — payment plan complete on local chain |
 
 **P0 — what changed**
 - **`PAYMENT_MODE`** (`src/lib/payments/mode.ts`) = `demo` | `testnet` | `mainnet`. Legacy
@@ -521,23 +521,41 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 - **Not yet exercised in a browser:** the demo-mode signature path (server side is
   verified) and native-coin payment through the UI (server side is verified).
 
-**Resume here**
-1. **Amoy (user step):** redeploy PhaseEscrow v2 with the deployer key
-   (`cd contracts && npm run deploy:amoy`), grant the relayer
-   (`RELAYER_ADDRESS=0x… npx hardhat run scripts/grant-roles.js --network amoy`), allowlist
-   real Amoy test USDT / USDC if you want them (`setAssetAllowed`), then set
-   `CHAIN_ESCROW_ADDRESS`, `CHAIN_USDT_ADDRESS`, `CHAIN_USDC_ADDRESS` on Vercel. Run
-   `npm run db:deploy` for the `payment_quote` migration first. Phases funded on the v1
-   contract stay on v1 — finish or refund them before switching the address.
-2. P6 left for later: Sepolia / BNB testnet asset sets (6.6b/c), a network-fee estimate in
+**P7 — what changed (done 2026-10-03)**
+- **Four test layers**, all green on the local stack:
+  `npm test` (79 unit) · `npm run test:contracts` (42) · **`npm run test:integration`**
+  (15 — payments + security regressions against Postgres + Hardhat, fresh fixture accounts
+  from `tests/fixtures.ts`; refuses to run off chain 31337) · **`npm run test:e2e`** (11
+  Playwright tests, two production servers from one build — testnet :3100 / demo :3101 —
+  with an injected EIP-6963 test wallet in `e2e/support/wallet.ts`).
+- **Security fixes found by the new tests:** the reconciler adopted ANY on-chain funding of a
+  phase to the right worker, so a refused underpayment / wrong-currency payment became
+  FUNDED on the next tick — it now adopts only a full cwINR funding or one matching a quote,
+  and flags the rest. wagmi ran WalletConnect's setup on every server render (a relay client
+  leaked per request) — now browser-only.
+- **UX fix:** the OTP boxes lost digits on fast input and cut a pasted / SMS-autofilled
+  code to one digit (functional state updates, paste spreads, `autocomplete=one-time-code`).
+- **Demo capture works again** (`npm run demo:capture` against `npm run demo:serve`): pays
+  through the payment window, locks the worker's delivery stake, signs with the account
+  name. 62 fresh screenshots committed under `docs/images/demo/`.
+- **Go-live:** [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md);
+  `/api/health/chain` now also proves the escrow is v2 and each asset is allowlisted;
+  `scripts/open-demo-escrows.mts` lists demo-money escrows to close before switching.
+
+**Resume here** — the payment plan (P0–P7) is complete on the local chain.
+1. **Go live on Amoy (user step, needs the deployer key + a private mnemonic):** follow
+   [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md) end to end.
+2. Admin tooling: escrows the reconciler flags as "not adopted" (tampered / short wallet
+   payments) only appear in the cron log — give ADM-07/08 a view + a refund-to-payer action.
+3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the
+   walkthrough .docx from the new screenshots.
+4. P6 left for later: Sepolia / BNB testnet asset sets (6.6b/c), a network-fee estimate in
    the quote, the dashboard's "Fund ₹X" shortcut (`FundDueButton`) still pays from the
    ChainWork wallet directly instead of opening the window.
-3. **P7** — hardening, E2E suite (the Playwright + injected-wallet harness used for P6 is
-   the starting point), "turn off demo money" runbook.
-4. Local dev: the Hardhat chain loses all state on restart (balances, escrows). Consider
+5. Local dev: the Hardhat chain loses all state on restart (balances, escrows). Consider
    switching the local node to anvil `--state` (persists) — or re-seed after restarts.
-5. Statement wallet section still in / out / net (P3 note).
-6. Before deploying to Neon/Vercel: `npm run db:deploy` (migrations `demo_chain`,
+6. Statement wallet section still in / out / net (P3 note).
+7. Before deploying to Neon/Vercel: `npm run db:deploy` (migrations `demo_chain`,
    `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`, `payment_quote`), run
    `scripts/backfill-payments.mts`, set `APP_BASE_URL`, `NEXT_PUBLIC_WC_PROJECT_ID`, optionally
    `ALCHEMY_API_KEY` / `COINGECKO_API_KEY`, and add the `delivery_stake_pct` config row.

@@ -48,6 +48,12 @@ real money.
 11. **Monitoring & alerting.** On-chain tx failure rates, escrow balances vs. expected, jury health
     metrics (watch closely while the juror pool is small), auth anomalies, audit-log review.
 12. **Backups & disaster recovery** for both databases, and a tested restore.
+13. **Flagged wallet payments.** Escrows the reconciler refuses to adopt (tampered / short
+    payments from a payer's own wallet) need an admin view, an alert and a refund-to-payer
+    action — today they appear only in the cron log.
+14. **Re-run all four test layers against the release candidate** (`npm test`,
+    `test:contracts`, `test:integration`, `test:e2e`) and follow
+    [RUNBOOK_DEMO_TO_TESTNET.md](RUNBOOK_DEMO_TO_TESTNET.md) on a staging copy first.
 
 ## 🟢 Launch sequence (after the blockers clear)
 

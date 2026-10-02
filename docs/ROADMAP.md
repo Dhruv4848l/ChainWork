@@ -9,7 +9,8 @@ browser-extension problems (E1–E8). Mainnet readiness is a separate, later tra
 > **Payment-first execution:** the wallet and extension work (sections 1–2 below), plus receipts,
 > demo-mode payments, the multi-crypto payment window and the live wallet ticker, is broken into
 > phases P0–P7 in [PAYMENT_SYSTEM_PLAN.md](PAYMENT_SYSTEM_PLAN.md). That plan runs **before**
-> the jury and cleanup work here.
+> the jury and cleanup work here. **Status (2026-10-03): P0–P7 done** on the local chain; going
+> live on Amoy follows [RUNBOOK_DEMO_TO_TESTNET.md](RUNBOOK_DEMO_TO_TESTNET.md).
 
 ---
 
