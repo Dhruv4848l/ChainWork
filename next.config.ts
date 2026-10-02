@@ -13,17 +13,39 @@ import type { NextConfig } from "next";
 */
 const isProd = process.env.NODE_ENV === "production";
 
+/*
+  User-wallet hosts (payment plan P4.6 / E7). The browser reads the escrow chain through
+  its PUBLIC RPC (src/lib/chain/publicChain.ts — never the private CHAIN_RPC_URL), and
+  WalletConnect / Reown AppKit needs its relay (wss), RPC, telemetry, the verify iframe,
+  wallet images and fonts. EIP-6963 wallet icons are data: URIs (already allowed).
+*/
+const chainRpcOrigin = (() => {
+  const url = process.env.PUBLIC_CHAIN_RPC_URL || (process.env.CHAIN_ID === "80002" ? "https://rpc-amoy.polygon.technology" : "http://127.0.0.1:8545");
+  try {
+    return new URL(url).origin;
+  } catch {
+    return "";
+  }
+})();
+const WC_CONNECT = [
+  "https://*.walletconnect.com", "https://*.walletconnect.org", "wss://relay.walletconnect.com", "wss://relay.walletconnect.org",
+  "https://api.web3modal.org", "https://*.web3modal.org", "https://*.reown.com",
+];
+const WC_FRAMES = ["https://verify.walletconnect.com", "https://verify.walletconnect.org", "https://secure.walletconnect.org"];
+const WC_IMAGES = ["https://api.web3modal.org", "https://*.walletconnect.com", "https://*.walletconnect.org"];
+
 const csp = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "img-src 'self' data: blob: https://res.cloudinary.com",
-  "font-src 'self' data:",
+  `img-src 'self' data: blob: https://res.cloudinary.com ${WC_IMAGES.join(" ")}`,
+  "font-src 'self' data: https://fonts.reown.com",
   "style-src 'self' 'unsafe-inline'",
   `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
-  `connect-src 'self'${isProd ? "" : " ws: wss:"}`,
+  `connect-src 'self' ${chainRpcOrigin} ${WC_CONNECT.join(" ")}${isProd ? "" : " ws: wss:"}`,
+  `frame-src ${WC_FRAMES.join(" ")}`,
 ].join("; ");
 
 const securityHeaders = [

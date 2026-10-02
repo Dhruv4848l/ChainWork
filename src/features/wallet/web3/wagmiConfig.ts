@@ -1,0 +1,56 @@
+import { defineChain, type Chain } from "viem";
+import { cookieStorage, createConfig, createStorage, http, injected } from "wagmi";
+import { walletConnect } from "wagmi/connectors/walletConnect";
+import type { PublicChainInfo } from "@/lib/chain/publicChain";
+
+/*
+  The wagmi config for the user's OWN wallet (payment plan P4.1). One chain — the one
+  escrow runs on. Wallets are found three ways:
+    - EIP-6963 discovery (multiInjectedProviderDiscovery): every installed extension
+      (MetaMask, Coinbase, Rabby, Brave, OKX…) announces itself with its own name + icon;
+    - a generic `injected` fallback for old extensions that don't announce;
+    - WalletConnect (QR code / mobile deep link — Safari and phones) when a Reown
+      project id is configured.
+  Cookie storage keeps the connection across the server render (no flash of "disconnected").
+*/
+
+export function chainFromInfo(info: PublicChainInfo): Chain {
+  return defineChain({
+    id: info.id,
+    name: info.name,
+    nativeCurrency: info.nativeCurrency,
+    rpcUrls: { default: { http: [info.rpcUrl] } },
+    ...(info.explorerUrl ? { blockExplorers: { default: { name: "Explorer", url: info.explorerUrl } } } : {}),
+    testnet: true,
+  });
+}
+
+export function makeWagmiConfig(info: PublicChainInfo) {
+  const chain = chainFromInfo(info);
+  return createConfig({
+    chains: [chain],
+    transports: { [chain.id]: http(info.rpcUrl) },
+    ssr: true,
+    storage: createStorage({ storage: cookieStorage }),
+    multiInjectedProviderDiscovery: true,
+    connectors: [
+      injected({ shimDisconnect: true }),
+      ...(info.walletConnectProjectId
+        ? [
+            walletConnect({
+              projectId: info.walletConnectProjectId,
+              showQrModal: true,
+              metadata: {
+                name: info.appName,
+                description: "Link your wallet to receive ChainWork escrow payouts.",
+                url: info.appUrl,
+                icons: [`${info.appUrl}/icon.png`],
+              },
+            }),
+          ]
+        : []),
+    ],
+  });
+}
+
+export type ChainWorkWagmiConfig = ReturnType<typeof makeWagmiConfig>;

@@ -2,29 +2,33 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useConnection, useDisconnect, useSignMessage, useWatchAsset } from "wagmi";
 import { Button } from "@/components/ui";
 import { completeWalletLinkAction, moveToWalletAction, startWalletLinkAction, unlinkWalletAction } from "./actions";
+import { WalletPicker } from "./web3/WalletPicker";
+import { useEnsureChain } from "./web3/useEnsureChain";
+import { useChainInfo } from "./web3/WalletProvider";
+import { isUserRejection, walletErrorMessage } from "./web3/walletErrors";
 
 /*
-  AUTH-10 / WK-12 / CL-08 — link an external self-custody wallet as the payout address
-  (payment plan P3.5). Three proofs, in order:
-    1. connect the injected wallet (MetaMask / Coinbase extension),
-    2. sign the SERVER-built Sign-In with Ethereum message (single-use, 10 minutes),
-    3. type the one-time code sent to the phone / email on file.
-  New payouts reach the wallet only after a 24-hour safety hold. Signing moves no funds
-  and grants no spending access. Universal wallet support (EIP-6963 picker,
-  WalletConnect) arrives in P4.
+  AUTH-10 / WK-12 / CL-08 — the user's own wallet (payment plans P3.5 + P4).
+
+  Connection is universal (P4): any EIP-6963 extension or WalletConnect, picked from a
+  list; the right network is enforced (switch / add) before anything is signed; account
+  and network changes in the wallet show up live, without a reload; wallet errors are
+  explained in plain language.
+
+  Linking stays the P3.5 flow: sign the SERVER-built Sign-In with Ethereum message, then
+  type the one-time code sent to the phone / email on file; new payouts use the wallet
+  after a 24-hour safety hold. Signing moves no funds and grants no spending access.
 */
-type Step = "idle" | "connecting" | "signing" | "code" | "linking";
-type Eth = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
 
-function shorten(a: string) {
-  return `${a.slice(0, 6)}…${a.slice(-4)}`;
-}
+type Step = "idle" | "starting" | "signing" | "code" | "linking";
 
-function istWhen(iso: string) {
-  return new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
-}
+const shorten = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const istWhen = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST";
+const same = (a?: string | null, b?: string | null) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
 
 export function ExternalWalletConnect({
   linkedAddress,
@@ -37,6 +41,13 @@ export function ExternalWalletConnect({
   withdrawableInr?: number;
 }) {
   const router = useRouter();
+  const info = useChainInfo();
+  const { address, isConnected, connector } = useConnection();
+  const { disconnect } = useDisconnect();
+  const { signMessageAsync } = useSignMessage();
+  const { watchAssetAsync } = useWatchAsset();
+  const { wrongNetwork, ensure, switching } = useEnsureChain();
+
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -47,33 +58,29 @@ export function ExternalWalletConnect({
   const [moving, startMove] = useTransition();
   const [moveMsg, setMoveMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
-  function fail(msg: string) {
-    setError(msg);
-    setStep("idle");
-  }
+  const explain = (e: unknown) => walletErrorMessage(e, { networkName: info.name });
 
-  async function connectInjected() {
+  /** Sign the server-built SIWE message with the connected account, then ask for the code. */
+  async function startLink() {
+    if (!address) return;
     setError(null);
     setNotice(null);
-    const eth = (window as unknown as { ethereum?: Eth }).ethereum;
-    if (!eth) return fail("No browser wallet found. Install MetaMask or the Coinbase Wallet extension.");
     try {
-      setStep("connecting");
-      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      const address = accounts?.[0];
-      if (!address) return fail("The wallet didn't share an account.");
-      const chainId = parseInt((await eth.request({ method: "eth_chainId" })) as string, 16);
-
-      const start = await startWalletLinkAction(address, chainId);
-      if (start.error || !start.siweMessage) return fail(start.error ?? "Couldn't start linking.");
-
+      if (wrongNetwork) await ensure(); // P4.3: never sign on the wrong network
+      setStep("starting");
+      const start = await startWalletLinkAction(address, info.id);
+      if (start.error || !start.siweMessage) {
+        setError(start.error ?? "Couldn't start linking.");
+        setStep("idle");
+        return;
+      }
       setStep("signing");
-      const signature = (await eth.request({ method: "personal_sign", params: [start.siweMessage, address] })) as string;
+      const signature = await signMessageAsync({ account: address, message: start.siweMessage });
       setPending({ message: start.siweMessage, signature, sentTo: start.sentTo ?? "your phone", address });
       setStep("code");
     } catch (e) {
-      const err = e as { code?: number; message?: string };
-      fail(err.code === 4001 ? "You cancelled the request in your wallet." : err.message || "Connection cancelled.");
+      setError(isUserRejection(e) ? "You cancelled the signature in your wallet. Nothing was linked." : explain(e));
+      setStep("idle");
     }
   }
 
@@ -94,8 +101,97 @@ export function ExternalWalletConnect({
     router.refresh();
   }
 
+  async function addToken() {
+    if (!info.token) return;
+    setError(null);
+    try {
+      if (wrongNetwork) await ensure();
+      await watchAssetAsync({ type: "ERC20", options: { address: info.token.address, symbol: info.token.symbol, decimals: info.token.decimals } });
+      setNotice(`${info.token.symbol} added to your wallet's token list.`);
+    } catch (e) {
+      if (!isUserRejection(e)) setError(explain(e));
+    }
+  }
+
+  // ---- shared pieces ------------------------------------------------------
+
+  const networkBanner = isConnected && wrongNetwork && (
+    <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-ember/40 bg-ember/10 px-3.5 py-2.5 text-xs text-ember">
+      <span>Wrong network — your wallet must be on {info.name} to sign.</span>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={switching}
+        onClick={() => ensure().catch((e) => setError(explain(e)))}
+      >
+        {switching ? "Switching…" : `Switch to ${info.name}`}
+      </Button>
+    </div>
+  );
+
+  const codeForm = (step === "code" || step === "linking") && (
+    <form onSubmit={submitCode} className="mt-3 rounded-lg border border-line bg-card p-4">
+      <div className="mb-1 text-[13px] font-semibold text-ink">Confirm it&apos;s you</div>
+      <p className="mb-3 text-xs leading-relaxed text-ink3">
+        Signature received for <span className="font-mono text-ink2">{pending ? shorten(pending.address) : ""}</span>. Enter the 6-digit
+        code we sent to {pending?.sentTo}.
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          pattern="\d{6}"
+          maxLength={6}
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+          aria-label="6-digit code"
+          className="w-28 rounded-lg border border-line bg-card2 px-3 py-2 font-mono text-[15px] tracking-[0.3em] text-ink focus-visible:outline-2 focus-visible:outline-bronze"
+        />
+        <Button type="submit" size="sm" variant="primary" disabled={code.length !== 6 || step === "linking"}>
+          {step === "linking" ? "Linking…" : "Link wallet"}
+        </Button>
+        <button type="button" onClick={() => { setPending(null); setStep("idle"); setError(null); }} className="text-xs text-ink3 hover:text-bronze">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+
+  const connectedLine = isConnected && address && (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink2">
+      <span>
+        Connected: <span className="font-medium text-ink">{connector?.name ?? "wallet"}</span> ·{" "}
+        {info.explorerUrl ? (
+          <a href={`${info.explorerUrl}/address/${address}`} target="_blank" rel="noreferrer" className="font-mono hover:text-bronze">
+            {shorten(address)} ↗
+          </a>
+        ) : (
+          <span className="font-mono">{shorten(address)}</span>
+        )}
+      </span>
+      {info.token && !wrongNetwork && (
+        <button onClick={addToken} className="text-bronze hover:underline">
+          Add {info.token.symbol} to wallet
+        </button>
+      )}
+      <button onClick={() => disconnect()} className="text-ink3 hover:text-bronze">
+        Disconnect
+      </button>
+    </div>
+  );
+
+  const messages = (
+    <>
+      {notice && <p className="mt-2 text-xs text-emerald">{notice}</p>}
+      {error && <p className="mt-2 text-xs text-ember">{error}</p>}
+    </>
+  );
+
+  // ---- linked ---------------------------------------------------------------
+
   if (linkedAddress) {
     const cooling = payoutActiveFrom && new Date(payoutActiveFrom) > new Date();
+    const mismatch = isConnected && address && !same(address, linkedAddress);
     return (
       <div className={`rounded-xl border p-5 ${cooling ? "border-amber/40 bg-amber/[0.06]" : "border-emerald/35 bg-emerald/[0.06]"}`}>
         <div className={`mb-1 text-[13px] font-semibold ${cooling ? "text-amber" : "text-emerald"}`}>
@@ -107,7 +203,30 @@ export function ExternalWalletConnect({
             ? `— new escrow payouts switch to this address on ${istWhen(payoutActiveFrom!)}. Until then they go to your ChainWork wallet.`
             : "— new escrow payouts settle to this address. Gas is still covered by the platform."}
         </div>
-        {notice && <p className="mt-2 text-xs text-emerald">{notice}</p>}
+
+        {/* P4.4: live — reacts to account switches in the wallet without a reload. */}
+        {mismatch && step === "idle" && (
+          <div className="mt-3 rounded-lg border border-amber/40 bg-amber/10 px-3.5 py-2.5 text-xs text-amber">
+            Your wallet is on <span className="font-mono">{shorten(address!)}</span>, not your linked payout wallet. Switch accounts in your
+            wallet — or{" "}
+            <button onClick={startLink} className="font-semibold underline">
+              re-link to {shorten(address!)}
+            </button>{" "}
+            (a new link restarts the 24-hour hold).
+          </div>
+        )}
+        {connectedLine}
+        {!isConnected && (
+          <details className="mt-3 text-xs text-ink2">
+            <summary className="cursor-pointer text-bronze hover:underline">Connect it in this browser</summary>
+            <p className="mb-2 mt-1.5 text-ink3">Optional — lets you add {info.token?.symbol ?? "the token"} to the wallet and spot an account mix-up.</p>
+            <WalletPicker />
+          </details>
+        )}
+        {networkBanner}
+        {codeForm}
+        {messages}
+
         {!cooling && (
           <form
             onSubmit={(e) => {
@@ -142,7 +261,7 @@ export function ExternalWalletConnect({
         <button
           onClick={() => startUnlink(async () => { await unlinkWalletAction(); router.refresh(); })}
           disabled={unlinking}
-          className="mt-3 text-xs text-ink3 hover:text-bronze"
+          className="mt-3 block text-xs text-ink3 hover:text-bronze"
         >
           {unlinking ? "Switching…" : "Switch back to the ChainWork custodial wallet"}
         </button>
@@ -150,66 +269,30 @@ export function ExternalWalletConnect({
     );
   }
 
-  if (step === "code" || step === "linking") {
-    return (
-      <form onSubmit={submitCode} className="rounded-xl border border-line bg-bg p-5">
-        <div className="mb-1 text-[13px] font-semibold text-ink">Confirm it&apos;s you</div>
-        <p className="mb-3 text-xs leading-relaxed text-ink3">
-          Signature received for <span className="font-mono text-ink2">{pending ? shorten(pending.address) : ""}</span>. Enter the
-          6-digit code we sent to {pending?.sentTo}.
-        </p>
-        <div className="flex items-center gap-2">
-          <input
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            pattern="\d{6}"
-            maxLength={6}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-            aria-label="6-digit code"
-            className="w-28 rounded-lg border border-line bg-card2 px-3 py-2 font-mono text-[15px] tracking-[0.3em] text-ink focus-visible:outline-2 focus-visible:outline-bronze"
-          />
-          <Button type="submit" size="sm" variant="primary" disabled={code.length !== 6 || step === "linking"}>
-            {step === "linking" ? "Linking…" : "Link wallet"}
-          </Button>
-          <button type="button" onClick={() => { setPending(null); setStep("idle"); setError(null); }} className="text-xs text-ink3 hover:text-bronze">
-            Cancel
-          </button>
-        </div>
-        {error && <p className="mt-3 text-xs text-ember">{error}</p>}
-      </form>
-    );
-  }
+  // ---- not linked ----------------------------------------------------------
 
   return (
     <div className="rounded-xl border border-line bg-bg p-5">
       <div className="mb-1 text-[13px] font-semibold text-ink">Connect your own wallet</div>
       <p className="mb-3.5 text-xs leading-relaxed text-ink3">
-        Self-custody, for advanced users. You&apos;ll sign a message (no funds move) and confirm with a code we text you.
-        New payouts reach the wallet after a 24-hour safety hold.
+        Self-custody, for advanced users. You&apos;ll sign a message (no funds move) and confirm with a code we text you. New payouts reach the
+        wallet after a 24-hour safety hold.
       </p>
-      <div className="flex flex-col gap-2">
-        <button
-          onClick={connectInjected}
-          disabled={step !== "idle"}
-          className="flex items-center justify-between rounded-lg border border-line-strong px-4 py-3 text-[13.5px] font-medium text-ink hover:border-bronze"
-        >
-          <span>MetaMask / Coinbase (browser extension)</span>
-          <span className="text-[11px] text-ink3">
-            {step === "connecting" ? "connecting…" : step === "signing" ? "sign in wallet…" : "injected"}
-          </span>
-        </button>
-        <button
-          disabled
-          className="flex cursor-not-allowed items-center justify-between rounded-lg border border-line px-4 py-3 text-[13.5px] font-medium text-ink3"
-          title="Arrives with universal wallet support (payment plan P4)"
-        >
-          <span>WalletConnect</span>
-          <span className="text-[11px]">coming soon</span>
-        </button>
-      </div>
-      {notice && <p className="mt-3 text-xs text-emerald">{notice}</p>}
-      {error && <p className="mt-3 text-xs text-ember">{error}</p>}
+      {!isConnected ? (
+        <WalletPicker />
+      ) : (
+        <>
+          {connectedLine}
+          {networkBanner}
+          {step !== "code" && step !== "linking" && (
+            <Button className="mt-3" size="sm" variant="primary" disabled={wrongNetwork || step !== "idle"} onClick={startLink}>
+              {step === "starting" ? "Preparing…" : step === "signing" ? "Sign in your wallet…" : `Link ${address ? shorten(address) : "this wallet"} for payouts`}
+            </Button>
+          )}
+          {codeForm}
+        </>
+      )}
+      {messages}
     </div>
   );
 }

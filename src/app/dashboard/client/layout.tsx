@@ -1,4 +1,7 @@
+import { headers } from "next/headers";
 import { requireRole } from "@/lib/auth/guards";
+import { publicChainInfo } from "@/lib/chain/publicChain";
+import { WalletProvider } from "@/features/wallet/web3/WalletProvider";
 import { ClientChrome } from "@/features/client/ClientChrome";
 import { getEscrowTotal, getUnreadNotificationCount } from "@/features/client/queries";
 
@@ -12,9 +15,12 @@ export default async function ClientLayout({ children }: { children: React.React
     getEscrowTotal(user.id),
     getUnreadNotificationCount(user.id),
   ]);
+  const cookie = (await headers()).get("cookie");
   return (
-    <ClientChrome name={user.name} kycTier={user.kycTier} escrowTotal={escrow} unreadCount={unreadCount}>
-      {children}
-    </ClientChrome>
+    <WalletProvider chain={publicChainInfo()} cookie={cookie}>
+      <ClientChrome name={user.name} kycTier={user.kycTier} escrowTotal={escrow} unreadCount={unreadCount}>
+        {children}
+      </ClientChrome>
+    </WalletProvider>
   );
 }
