@@ -5,11 +5,12 @@ import { Button } from "@/components/ui";
 import { fundPhaseAction, approvePhaseAction, requestChangesAction } from "./actions";
 import { ForgeComplete } from "@/features/shared/ForgeComplete";
 import { formatInr } from "@/lib/format";
+import { AddFundsForm } from "@/features/wallet/AddFundsForm";
 
 /*
-  CL-07 client-side phase controls (all stubbed to Phase 7 — they log a TODO and
-  report which phase wires them, never faking a release):
-   - PENDING_FUNDING + fundable -> Fund Phase
+  CL-07 client-side phase controls (real escrow actions since Phase 7):
+   - PENDING_FUNDING + fundable -> Fund Phase (from the real balance; a shortfall
+     offers Add funds inline, prefilled with the missing amount — payment plan P3.1)
    - PENDING_FUNDING + locked   -> "unlocks once previous phase closes"
    - DELIVERED / VERIFICATION_WINDOW_OPEN -> Approve & Release / Request Changes / Reject
 */
@@ -28,13 +29,15 @@ export function ClientPhaseControls({
 }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [receiptNo, setReceiptNo] = useState<string | null>(null);
+  const [shortfall, setShortfall] = useState<number | null>(null);
   const [forge, setForge] = useState(false);
   const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean; receiptNo?: string | null }>) =>
+  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean; receiptNo?: string | null; code?: string; shortfallInr?: number }>) =>
     start(async () => {
       const r = await fn();
       setMsg(r.message ?? r.error ?? null);
       setReceiptNo(r.receiptNo ?? null);
+      setShortfall(r.code === "INSUFFICIENT_BALANCE" ? r.shortfallInr ?? null : null);
       if (r.released) setForge(true);
     });
   // Failed money attempts are recorded with a receipt too (payment plan P2) — offer it.
@@ -62,6 +65,15 @@ export function ClientPhaseControls({
           Fund Phase — {formatInr(amount)}
         </Button>
         {note}
+        {shortfall != null && (
+          <div className="mt-2.5 rounded-lg border border-amber/40 bg-amber/10 p-3">
+            <AddFundsForm
+              defaultAmount={shortfall}
+              label="Add funds"
+              hint={`Your wallet is ${formatInr(shortfall)} short for this phase. Add funds, then fund the phase again.`}
+            />
+          </div>
+        )}
       </div>
     );
   }

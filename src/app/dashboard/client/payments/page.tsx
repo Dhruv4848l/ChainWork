@@ -9,6 +9,7 @@ import { FundDueButton } from "@/features/client/FundDueButton";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { WalletAddresses, walletSub } from "@/features/wallet/WalletBreakdown";
 import { TransactionsCard } from "@/features/shared/TransactionsCard";
 import { getPaymentHistory } from "@/features/shared/paymentHistory";
 
@@ -30,22 +31,18 @@ export default async function ClientPaymentsPage() {
       <div className="mb-4.5 grid grid-cols-2 gap-3.5 md:grid-cols-4">
         <StatCard
           label="Wallet balance"
-          value={formatInr(wallet.balanceInr + wallet.demoCreditInr)}
+          value={formatInr(wallet.spendableInr)}
           accent="bronze"
-          sub={
-            wallet.demoCreditInr > 0
-              ? `incl. ${formatInr(wallet.demoCreditInr)} demo credit — not withdrawable`
-              : wallet.live ? "live on-chain, in ₹" : "cached · chain offline"
-          }
+          sub={walletSub(wallet)}
         />
-        <StatCard label="In escrow" value={formatInr(pay.escrowTotal)} accent="info" />
+        <StatCard label="In escrow" value={formatInr(wallet.inEscrowAsClientInr)} accent="info" sub="locked for your phases" />
         <StatCard label="Released to workers" value={formatInr(pay.releasedTotal)} accent="emerald" />
         <StatCard label="Escrow reliability" value={`${reliability}%`} accent="emerald" />
       </div>
 
       <Card className="mb-3.5 p-6">
         <h3 className="mb-1.5 text-[15px] font-semibold text-ink">Your wallet</h3>
-        <p className="mb-3.5 font-mono text-[11px] text-ink3">{wallet.custodialAddress}</p>
+        <WalletAddresses wallet={wallet} />
         <ExternalWalletConnect linkedAddress={wallet.externalAddress} />
       </Card>
 

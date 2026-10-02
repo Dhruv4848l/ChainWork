@@ -1,4 +1,5 @@
 import "server-only";
+import { isPhaseSettled } from "@/lib/escrow/phaseMachine";
 import { platformDb } from "@/lib/platformDb";
 
 /*
@@ -120,10 +121,21 @@ export async function getClientHireDetail(hireId: string, userId: string) {
 export async function getClientPayments(userId: string) {
   const hires = await platformDb.hire.findMany({
     where: { clientId: userId },
-    include: { job: true, phases: { include: { escrowTransactions: true }, orderBy: { index: "asc" } } },
+    include: {
+      job: true,
+      contract: { select: { clientSignature: true, workerSignature: true } },
+      phases: { include: { escrowTransactions: true }, orderBy: { index: "asc" } },
+    },
   });
   const phases = hires.flatMap((h) => h.phases.map((p) => ({ ...p, hireTitle: h.job.title })));
-  const dueToFund = phases.filter((p) => p.status === "PENDING_FUNDING");
+  // Only what can actually be funded right now — the same gates fundPhaseAction enforces:
+  // both signatures recorded, and the previous phase settled (sequential funding).
+  const dueToFund = hires.flatMap((h) => {
+    if (!h.contract?.clientSignature || !h.contract?.workerSignature) return [];
+    return h.phases
+      .filter((p, i) => p.status === "PENDING_FUNDING" && (i === 0 || isPhaseSettled(h.phases[i - 1].status)))
+      .map((p) => ({ ...p, hireTitle: h.job.title }));
+  });
   const funded = phases.filter((p) => FUNDED_STATES.includes(p.status));
   const released = phases.filter((p) => p.status === "RELEASED");
   const escrowTotal = funded.reduce((s, p) => s + Number(p.amount), 0);

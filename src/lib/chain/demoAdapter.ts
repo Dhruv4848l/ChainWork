@@ -86,20 +86,14 @@ async function credit(tx: Tx, address: string, paise: number): Promise<void> {
 }
 
 /**
- * Debit `paise`, spending the locked demo credit first. With `mintShortfall`, a short
- * balance is topped up first — mirroring viemAdapter's current mock on-ramp inside
- * fundPhase/lockStake. TODO(payment plan P3.1 / W2): remove in BOTH adapters together.
+ * Debit `paise`, spending the locked demo credit first. A short balance is refused
+ * (payment plan P3.1 / W2) — exactly like viemAdapter: money is only spent, never
+ * conjured; topping up is the explicit on-ramp (mintInr).
  */
-async function debit(tx: Tx, address: string, paise: number, mintShortfall: boolean): Promise<void> {
+async function debit(tx: Tx, address: string, paise: number): Promise<void> {
   const acct = await lockAccount(tx, address);
   const locked = acct.locked;
-  let balance = acct.balance;
-  if (balance < paise) {
-    if (!mintShortfall) throw new EscrowRuleError("InsufficientBalance", `${address} has ₹${balance / 100}`);
-    const shortfall = paise - balance;
-    await tx.demoAccount.update({ where: { address: norm(address) }, data: { balance: { increment: rupees(shortfall) } } });
-    balance += shortfall;
-  }
+  if (acct.balance < paise) throw new EscrowRuleError("InsufficientBalance", `${address} has ₹${acct.balance / 100}`);
   const fromLocked = Math.min(locked, paise);
   await tx.demoAccount.update({
     where: { address: norm(address) },
@@ -216,7 +210,7 @@ export const demoAdapter: ChainAdapter = {
     await platformDb.$transaction(async (tx) => {
       const existing = await tx.demoEscrow.findUnique({ where: { key } });
       assertEscrowOp("fundPhase", (existing?.status as EscrowStatus | undefined) ?? "NONE");
-      await debit(tx, client, paise, true);
+      await debit(tx, client, paise);
       await tx.demoEscrow.create({
         data: { key, kind: "PHASE", refId: phaseId, client: norm(client), worker: norm(worker), amount: rupees(paise), status: "FUNDED" },
       });
@@ -266,7 +260,7 @@ export const demoAdapter: ChainAdapter = {
     await platformDb.$transaction(async (tx) => {
       const existing = await tx.demoEscrow.findUnique({ where: { key } });
       assertStakeOp("lockStake", (existing?.status as StakeStatus | undefined) ?? "NONE");
-      await debit(tx, worker, paise, true);
+      await debit(tx, worker, paise);
       await tx.demoEscrow.create({
         data: { key, kind: "STAKE", refId: hireId, client: norm(client), worker: norm(worker), amount: rupees(paise), status: "LOCKED" },
       });

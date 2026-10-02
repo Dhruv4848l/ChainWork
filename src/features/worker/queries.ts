@@ -8,8 +8,9 @@ import { platformDb } from "@/lib/platformDb";
 
 export async function getWalletChip(userId: string) {
   const wallet = await platformDb.wallet.findUnique({ where: { userId } });
-  // Displayed balance = cached on-chain balance + showcase demo credit.
-  return Number(wallet?.balanceCache ?? 0) + Number(wallet?.demoCredit ?? 0);
+  // The cached spendable custodial balance (P3.2: in demo mode it already includes the
+  // demo credit; on a real chain the demo credit doesn't exist, so it is never added).
+  return Number(wallet?.balanceCache ?? 0);
 }
 
 export async function getWorkerDashboard(userId: string) {
@@ -119,7 +120,8 @@ export async function getWorkerEarnings(userId: string) {
 
   const phases = hires.flatMap((h) => h.phases.map((p) => ({ ...p, hireTitle: h.job.title })));
   const pending = phases.filter((p) =>
-    ["FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN"].includes(p.status)
+    // Disputed money is still in escrow (frozen) — list it, matching the "Held for you" total.
+    ["FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN", "DISPUTED"].includes(p.status)
   );
   const released = phases
     .filter((p) => p.status === "RELEASED")

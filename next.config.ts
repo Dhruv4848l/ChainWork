@@ -43,6 +43,8 @@ const PDF_FONTS = [
 ];
 
 const nextConfig: NextConfig = {
+  // The floating dev badge sits on top of the sidebar's "Log out" button.
+  devIndicators: false,
   // Make sure the serverless bundles for the PDF routes ship the fonts.
   outputFileTracingIncludes: Object.fromEntries(
     ["/api/receipts/**", "/api/statements/**"].map((route) => [route, PDF_FONTS]),

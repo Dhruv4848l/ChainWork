@@ -5,7 +5,9 @@ import { adapter } from "./escrow";
 import { demoLockedCreditInr } from "./demoAdapter";
 import { platformDb } from "@/lib/platformDb";
 
-export { payoutAddressFor } from "./payout";
+import { payoutAddressFor } from "./payout";
+
+export { payoutAddressFor };
 
 /*
   Wallet layer (Phase 9). Custodial wallets are the default: the platform holds the
@@ -26,45 +28,67 @@ export { payoutAddressFor } from "./payout";
 export interface WalletSummary {
   custodialAddress: `0x${string}`;
   externalAddress: string | null;
+  /** Where releases are paid for NEW fundings (custodial while a fresh link is cooling down). */
   payoutAddress: `0x${string}`;
-  /** Withdrawable balance in ₹ (on-chain in testnet mode; demo balance in demo mode). */
-  balanceInr: number;
-  /** Showcase-only demo credit: displayed and usable in demos, NEVER withdrawable. */
-  demoCreditInr: number;
   currency: string;
-  /** false when the balance read failed and balanceInr is the last cached value. */
+  /** What funding a phase can spend: the custodial balance (demo mode: incl. the demo credit). */
+  spendableInr: number;
+  /** What a withdrawal would move: spendable minus the never-withdrawable demo credit. */
+  withdrawableInr: number;
+  /** Demo mode only — the unspent part of the showcase grant. Always 0 on testnet/mainnet. */
+  demoCreditInr: number;
+  /** Balance of the linked external wallet (the stablecoin), or null when none is linked. */
+  externalInr: number | null;
+  /** As a client: money you have locked in escrow (funded, not yet released/refunded). */
+  inEscrowAsClientInr: number;
+  /** As a worker: money held in escrow for you. */
+  heldForYouInr: number;
+  /** false when the chain read failed and the balances are the last cached values. */
   live: boolean;
 }
 
+const HELD = ["FUNDED", "IN_PROGRESS", "DELIVERED", "VERIFICATION_WINDOW_OPEN", "DISPUTED"] as const;
+
+async function escrowTotals(userId: string) {
+  const [asClient, asWorker] = await Promise.all([
+    platformDb.phase.aggregate({ _sum: { amount: true }, where: { status: { in: [...HELD] }, hire: { clientId: userId } } }),
+    platformDb.phase.aggregate({ _sum: { amount: true }, where: { status: { in: [...HELD] }, hire: { workerId: userId } } }),
+  ]);
+  return { inEscrowAsClientInr: Number(asClient._sum.amount ?? 0), heldForYouInr: Number(asWorker._sum.amount ?? 0) };
+}
+
 /**
- * Full wallet view: addresses + the balance of the payout address.
- * Resilient by design: a read-only balance view must never take down the page, so if
- * the RPC is unreachable (e.g. the chain node is down) we fall back to the last cached
- * balance and flag `live: false`. Money MOVEMENTS (withdraw/top-up) still require the
- * chain and fail loudly — only this read degrades.
+ * Full wallet view (payment plan P3.2): every balance a user has, separately.
+ * Resilient by design: a read-only view must never take down the page, so if the RPC
+ * is unreachable we fall back to the cached custodial balance and flag `live: false`.
+ * Money MOVEMENTS still require the chain and fail loudly — only this read degrades.
  */
 export async function getWalletSummary(userId: string): Promise<WalletSummary> {
   const { address: custodial } = await provisionWallet(userId);
-  const wallet = await platformDb.wallet.findUnique({ where: { userId } });
-  const external = wallet?.externalAddress ?? null;
-  const payout = (external && isAddress(external) ? external : custodial) as `0x${string}`;
-  const base = { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, currency: "INR" };
+  const [wallet, totals, payout] = await Promise.all([
+    platformDb.wallet.findUnique({ where: { userId } }),
+    escrowTotals(userId),
+    payoutAddressFor(userId),
+  ]);
+  const external = wallet?.externalAddress && isAddress(wallet.externalAddress) ? wallet.externalAddress : null;
+  const base = { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, currency: "INR", ...totals };
 
   try {
     const chain = adapter();
-    const total = await chain.balanceOfInr(payout);
-    // Demo mode: the demo-credit grant lives INSIDE the demo balance (as lockedCredit),
-    // so report it separately instead of adding Wallet.demoCredit on top. Testnet mode:
-    // demoCredit never exists on-chain and is shown alongside the real balance.
-    const demoCreditInr = chain.kind === "demo" ? await demoLockedCreditInr(payout) : Number(wallet?.demoCredit ?? 0);
-    const balanceInr = chain.kind === "demo" ? total - demoCreditInr : total;
-    // keep the cached balance roughly in sync for cheap reads elsewhere
-    await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: balanceInr } });
-    return { ...base, balanceInr, demoCreditInr, live: true };
+    const [spendableInr, externalInr] = await Promise.all([
+      chain.balanceOfInr(custodial),
+      external ? chain.balanceOfInr(external) : Promise.resolve(null),
+    ]);
+    // Demo credit only exists in demo mode, as the locked part of the demo balance. On a
+    // real chain Wallet.demoCredit was never minted, so it is not shown at all.
+    const demoCreditInr = chain.kind === "demo" ? await demoLockedCreditInr(custodial) : 0;
+    const withdrawableInr = Math.max(0, Math.round((spendableInr - demoCreditInr) * 100) / 100);
+    await platformDb.wallet.updateMany({ where: { userId }, data: { balanceCache: spendableInr } });
+    return { ...base, spendableInr, withdrawableInr, demoCreditInr, externalInr, live: true };
   } catch (e) {
     console.warn(`getWalletSummary: balance read failed, using cached balance — ${(e as Error).message.slice(0, 80)}`);
-    const balanceInr = wallet ? Number(wallet.balanceCache) : 0;
-    return { ...base, balanceInr, demoCreditInr: wallet ? Number(wallet.demoCredit) : 0, live: false };
+    const cached = wallet ? Number(wallet.balanceCache) : 0;
+    return { ...base, spendableInr: cached, withdrawableInr: cached, demoCreditInr: 0, externalInr: null, live: false };
   }
 }
 

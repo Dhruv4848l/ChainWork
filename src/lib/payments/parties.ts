@@ -19,12 +19,15 @@ export function escrowAddressLabel(): string {
   return paymentMode() === "demo" ? "ChainWork demo escrow" : ESCROW_ADDRESS;
 }
 
-/** Re-read a user's payout balance into Wallet.balanceCache (best-effort, for cheap reads). */
+/**
+ * Re-read a user's custodial (spendable) balance into Wallet.balanceCache — the same
+ * figure getWalletSummary caches (P3.2). Best-effort, for cheap reads like the top bar.
+ */
 export async function refreshBalanceCache(userId: string): Promise<void> {
   try {
     const wallet = await platformDb.wallet.findUnique({ where: { userId } });
     if (!wallet) return;
-    const address = wallet.externalAddress ?? (await provisionWallet(userId)).address;
+    const address = (await provisionWallet(userId)).address;
     const bal = await chain.balanceOfInr(address);
     await platformDb.wallet.update({ where: { userId }, data: { balanceCache: bal } });
   } catch (e) {

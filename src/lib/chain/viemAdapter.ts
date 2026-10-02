@@ -21,7 +21,7 @@ import {
 import { relayerAccount, accountForUser, provisionWallet } from "./keystore";
 import { ensureGas } from "./gas";
 import { payoutAddressFor } from "./payout";
-import { ESCROW_STATUS_NAMES } from "./escrowRules";
+import { ESCROW_STATUS_NAMES, EscrowRuleError } from "./escrowRules";
 import { keyFor } from "./keys";
 import { withSignerLock } from "./signerLock";
 import { currentChainTxObserver } from "@/lib/payments/observer";
@@ -32,7 +32,7 @@ import type { ChainAdapter, EscrowView, TxHash } from "./types";
   Each write waits for a confirmation and returns the tx hash so callers can record it.
 
   Custodial model (dev/testnet): the platform relayer holds ATTESTOR + DISPUTE roles and
-  mints the test stablecoin (mock fiat on-ramp). Client/worker custodial accounts sign
+  mints the test stablecoin ONLY through the explicit mock fiat on-ramp (mintInr). Client/worker custodial accounts sign
   their own party actions (fund, lockStake, withdraw); their gas is sponsored by the
   relayer (./gas.ts). Every write first calls assertChainWritable(), which refuses to
   sign with the public Hardhat keys on a shared network.
@@ -91,12 +91,16 @@ function mint(to: `0x${string}`, amount: bigint, primary = false): Promise<TxHas
   return write(relayerAccount(), { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "mint", args: [to, amount] }, primary);
 }
 
-async function ensureStablecoin(address: `0x${string}`, needed: bigint) {
+/**
+ * Payment plan P3.1 (W2): money is only ever spent from the real balance. A shortfall
+ * is refused BEFORE any transaction is sent (no gas wasted, nothing moved) — the user
+ * adds funds through the explicit on-ramp first. Mirrors demoAdapter's debit().
+ */
+async function assertBalance(address: `0x${string}`, needed: bigint) {
   const bal = await balanceOf(address);
-  if (bal >= needed) return;
-  // Mock fiat on-ramp: the relayer mints the shortfall to the user's wallet.
-  // TODO(payment plan P3.1 / W2): stop minting here — funding must spend the real balance.
-  await mint(address, needed - bal);
+  if (bal < needed) {
+    throw new EscrowRuleError("InsufficientBalance", `${address} holds ${fromTokenUnits(bal)}, needs ${fromTokenUnits(needed)}`);
+  }
 }
 
 async function ensureApproval(account: Account, needed: bigint) {
@@ -117,7 +121,7 @@ function relayerCall(functionName: string, args: readonly unknown[]): Promise<Tx
 export const viemAdapter: ChainAdapter = {
   kind: "viem",
 
-  /** Client funds a phase: mint (mock on-ramp) + approve + fundPhase, signed by the client. */
+  /** Client funds a phase from their real balance: approve + fundPhase, signed by the client. */
   async fundPhase(phaseId, clientUserId, workerUserId, amountInr) {
     assertChainWritable();
     const client = await accountForUser(clientUserId);
@@ -125,7 +129,7 @@ export const viemAdapter: ChainAdapter = {
     // otherwise their custodial wallet (Phase 9).
     const workerAddr = await payoutAddressFor(workerUserId);
     const amount = toTokenUnits(amountInr);
-    await ensureStablecoin(client.address, amount);
+    await assertBalance(client.address, amount);
     await ensureApproval(client, amount);
     await ensureGas(client.address); // fundPhase records msg.sender as the client
     return write(client, { address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhase", args: [keyFor(phaseId), workerAddr, amount] }, true);
@@ -157,7 +161,7 @@ export const viemAdapter: ChainAdapter = {
     const worker = await accountForUser(workerUserId);
     const client = await accountForUser(clientUserId);
     const amount = toTokenUnits(amountInr);
-    await ensureStablecoin(worker.address, amount);
+    await assertBalance(worker.address, amount);
     await ensureApproval(worker, amount);
     await ensureGas(worker.address); // the stake is locked by the worker themselves
     return write(worker, { address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "lockStake", args: [keyFor(hireId), client.address, amount] }, true);

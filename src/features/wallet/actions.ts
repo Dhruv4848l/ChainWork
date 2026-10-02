@@ -51,10 +51,20 @@ export async function withdrawAction(): Promise<WalletActionState> {
   return { ok: true, message: `Withdrew ${formatInr(amountInr)} to your bank/UPI (mock off-ramp).` };
 }
 
-/** Add funds (mock fiat on-ramp) — credits a fixed demo amount to the custodial wallet. */
-export async function addFundsAction(): Promise<WalletActionState> {
+/** Bounds for one mock on-ramp top-up (whole rupees). */
+const TOPUP_MIN_INR = 100;
+const TOPUP_MAX_INR = 500000;
+
+/**
+ * Add funds (mock fiat on-ramp) — the ONLY way money enters a ChainWork wallet
+ * (payment plan P3.1: funding never mints a shortfall any more).
+ */
+export async function addFundsAction(amount: number = 10000): Promise<WalletActionState> {
   const user = await requireUser();
-  const amountInr = 10000;
+  const amountInr = Math.ceil(Number(amount));
+  if (!Number.isFinite(amountInr) || amountInr < TOPUP_MIN_INR || amountInr > TOPUP_MAX_INR) {
+    return { error: `Enter an amount between ${formatInr(TOPUP_MIN_INR)} and ${formatInr(TOPUP_MAX_INR)}.` };
+  }
   const to = await custodialAddressOf(user.id);
   const res = await runPayment(
     { kind: "TOPUP", operation: "mint", signer: "RELAYER", amountInr, payeeUserId: user.id, fromAddress: "UPI / card (mock on-ramp)", toAddress: to },
@@ -63,6 +73,7 @@ export async function addFundsAction(): Promise<WalletActionState> {
   );
   revalidatePath("/dashboard/client/payments");
   revalidatePath("/dashboard/worker/earnings");
+  revalidatePath("/dashboard/client/hires", "layout");
   if (!res.ok) return { error: res.reason };
   return { ok: true, message: `Added ${formatInr(amountInr)} to your wallet (mock on-ramp).` };
 }

@@ -23,6 +23,10 @@ export interface ActionState {
   paymentId?: string;
   /** Its receipt (P2) — failed attempts get one too. */
   receiptNo?: string | null;
+  /** Failure code (src/lib/payments/errors.ts), e.g. INSUFFICIENT_BALANCE. */
+  code?: string;
+  /** INSUFFICIENT_BALANCE only: how much more the wallet needs (₹, rounded up). */
+  shortfallInr?: number;
 }
 
 function str(fd: FormData, key: string) {
@@ -181,7 +185,15 @@ export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
   );
   revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
   revalidatePath("/dashboard/client/payments");
-  if (!res.ok) return { error: res.reason, paymentId: res.paymentId, receiptNo: res.receiptNo };
+  if (!res.ok) {
+    // P3.1: funding spends the real balance only — tell the client exactly how much to add.
+    let shortfallInr: number | undefined;
+    if (res.code === "INSUFFICIENT_BALANCE") {
+      const spendable = await chain.balanceOfInr(from).catch(() => 0);
+      shortfallInr = Math.max(1, Math.ceil(Number(phase.amount) - spendable));
+    }
+    return { error: res.reason, code: res.code, shortfallInr, paymentId: res.paymentId, receiptNo: res.receiptNo };
+  }
   return { ok: true, message: "Escrow funded — funds are locked.", txHash: res.txHash, paymentId: res.paymentId, receiptNo: res.receiptNo };
 }
 
