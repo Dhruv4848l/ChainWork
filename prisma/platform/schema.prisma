@@ -782,6 +782,38 @@ model Receipt {
   issuedAt    DateTime           @default(now())
 }
 
+/// A held price for the multi-crypto payment window (payment plan P6.2). The payer has
+/// until `expiresAt` (5 min) to pay `assetAmount` of the asset; the server later checks the
+/// on-chain PhaseFunded event against exactly these values (worker, asset, amount).
+model PaymentQuote {
+  id            String      @id @default(cuid())
+  phaseId       String
+  userId        String
+  mode          PaymentMode
+  /// "cwINR" | "USDT" | "USDC" | "NATIVE"
+  assetKey      String
+  assetSymbol   String
+  /// null = the chain's native coin.
+  assetAddress  String?
+  assetDecimals Int
+  chainId       Int?
+  /// ₹ per 1 whole unit of the asset at quote time.
+  rate          Decimal     @db.Decimal(24, 8)
+  amountInr     Decimal     @db.Decimal(14, 2)
+  /// Exact base units the payer must send.
+  assetAmount   String
+  /// The worker payout address the escrow must record (from payoutAddressFor at quote time).
+  workerAddress String
+  escrowAddress String?
+  pricesStale   Boolean     @default(false)
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@index([phaseId, createdAt])
+  @@index([userId, createdAt])
+}
+
 /// Gap-free yearly counters for receipt numbers, keyed "RCPT-2026" / "FAIL-2026".
 /// Incremented inside the issuing transaction, so a rollback never burns a number.
 model ReceiptSequence {

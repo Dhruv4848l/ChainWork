@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { hireStake } from "@/lib/escrow/stake";
+import { fundingBlocker, loadFundablePhase } from "@/lib/escrow/fundGates";
 import { redirect } from "next/navigation";
 import { platformDb } from "@/lib/platformDb";
 import { requireRole, assertKycVerified } from "@/lib/auth/guards";
@@ -139,39 +139,14 @@ async function loadOwnedPhase(userId: string, phaseId: string) {
 /** Fund a phase's escrow. KYC-gated; enforces sequential funding. */
 export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
   const user = await requireRole("CLIENT");
-  const phase = await loadOwnedPhase(user.id, phaseId);
-  if (!phase) return { error: "Phase not found." };
-  if (!canTransitionPhase("fund", phase.status)) return { error: "This phase isn't awaiting funding." };
+  const phase = await loadFundablePhase(phaseId);
+  // Signatures, delivery stake, sequential order — shared with the payment window (P6).
+  const blocker = await fundingBlocker(phase, user.id);
+  if (blocker || !phase) return { error: blocker ?? "Phase not found." };
 
-  // SIGNATURE GATE — no escrow moves before both parties have signed the contract.
-  // Deliberately checked before KYC so the user is told the real blocker first.
-  const contract = phase.hire.contract;
-  if (!contract?.clientSignature || !contract?.workerSignature) {
-    const who = !contract?.clientSignature ? "You haven't" : "The worker hasn't";
-    return {
-      error: `${who} signed the contract yet — escrow unlocks once both signatures are recorded.`,
-    };
-  }
-
-  // STAKE GATE (P3.6) — above the threshold the worker's refundable delivery stake must be
-  // in escrow before the client is asked to fund anything.
-  const stake = await hireStake(phase.hire);
-  if (stake.state === "AWAITING") {
-    return { error: `The worker hasn't locked their ₹${stake.amountInr.toLocaleString("en-IN")} delivery stake yet — funding opens once it's in escrow.` };
-  }
-
-  // KYC gate — blocks money movement until VERIFIED (redirects to soft-block).
+  // KYC gate — blocks money movement until VERIFIED (redirects to soft-block). Checked
+  // after the rules above so the user hears the real blocker first.
   await assertKycVerified(user, `/dashboard/client/hires/${phase.hireId}`);
-
-  // Sequential funding: a phase can only be funded once the previous one has settled.
-  if (phase.index > 1) {
-    const prev = await platformDb.phase.findFirst({
-      where: { hireId: phase.hireId, index: phase.index - 1 },
-    });
-    if (prev && !isPhaseSettled(prev.status)) {
-      return { error: `Fund Phase ${phase.index} unlocks once Phase ${phase.index - 1} closes.` };
-    }
-  }
 
   const [from, to] = await Promise.all([custodialAddressOf(phase.hire.clientId), payoutAddressFor(phase.hire.workerId)]);
   const res = await runPayment(
