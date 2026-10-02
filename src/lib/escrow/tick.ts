@@ -69,11 +69,11 @@ export async function runEscrowTick(now: Date = new Date()): Promise<TickResult>
         },
         () => chain.autoRelease(p.id),
         {
-          onConfirmedTx: async (tx) => {
+          onConfirmedTx: async (tx, _payment, receipt) => {
             await tx.notification.createMany({
               data: [
-                { userId: p.hire.workerId, type: "PAYMENT", title: "Payment auto-released", body: `The verification window on "${p.name}" lapsed — funds were released to you automatically.` },
-                { userId: p.hire.clientId, type: "ESCROW", title: "Phase auto-released", body: `"${p.name}" auto-released to the worker after the verification window closed.` },
+                { userId: p.hire.workerId, type: "PAYMENT", title: "Payment auto-released", body: `The verification window on "${p.name}" lapsed — funds were released to you automatically. Receipt ${receipt.receiptNo}.`, linkUrl: "/dashboard/worker/earnings" },
+                { userId: p.hire.clientId, type: "ESCROW", title: "Phase auto-released", body: `"${p.name}" auto-released to the worker after the verification window closed. Receipt ${receipt.receiptNo}.`, linkUrl: "/dashboard/client/payments" },
               ],
             });
           },
@@ -124,10 +124,10 @@ export async function runEscrowTick(now: Date = new Date()): Promise<TickResult>
         },
         () => chain.refundToClient(p.id),
         {
-          onConfirmedTx: async (tx) => {
+          onConfirmedTx: async (tx, _payment, receipt) => {
             await tx.notification.createMany({
               data: [
-                { userId: p.hire.clientId, type: "ESCROW", title: "Phase rolled back", body: `"${p.name}" wasn't delivered — the escrow was returned to you.` },
+                { userId: p.hire.clientId, type: "ESCROW", title: "Phase rolled back", body: `"${p.name}" wasn't delivered — the escrow was returned to you. Receipt ${receipt.receiptNo}.`, linkUrl: "/dashboard/client/payments" },
                 { userId: p.hire.workerId, type: "SYSTEM", title: "Phase auto-cancelled", body: `You missed the delivery window on "${p.name}". The escrow was returned to the client and a strike was applied.` },
               ],
             });

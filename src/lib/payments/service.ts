@@ -4,6 +4,7 @@ import type {
   PaymentKind,
   PaymentMode as DbPaymentMode,
   PaymentTransaction,
+  Receipt,
   SignerKind,
   EscrowTxType,
 } from "@/generated/platform";
@@ -51,15 +52,17 @@ export interface PaymentSpec {
 }
 
 export type PaymentOutcome =
-  | { ok: true; paymentId: string; txHash: TxHash }
-  | { ok: false; paymentId: string; code: string; reason: string; pending: boolean; cancelled: boolean };
+  | { ok: true; paymentId: string; txHash: TxHash; receiptNo: string | null }
+  | { ok: false; paymentId: string; code: string; reason: string; pending: boolean; cancelled: boolean; receiptNo: string | null };
 
 export interface RunPaymentHooks {
-  /** Extra domain writes in the SAME transaction as the confirmation (strikes, flags…). */
-  onConfirmedTx?: (tx: Prisma.TransactionClient, payment: PaymentTransaction) => Promise<void>;
+  /** Extra domain writes in the SAME transaction as the confirmation (strikes, flags…). The receipt already exists. */
+  onConfirmedTx?: (tx: Prisma.TransactionClient, payment: PaymentTransaction, receipt: Receipt) => Promise<void>;
   /** After commit, best-effort (notifications, hire completion). Never throws outward. */
-  afterConfirmed?: (payment: PaymentTransaction) => Promise<void>;
+  afterConfirmed?: (payment: PaymentTransaction, receipt: Receipt) => Promise<void>;
 }
+
+export type ConfirmedPayment = PaymentTransaction & { receipt: Receipt };
 
 function dbMode(): DbPaymentMode {
   const m = paymentMode();
@@ -193,7 +196,7 @@ export async function confirmPayment(
   paymentId: string,
   mined: Partial<Pick<MinedTx, "blockNumber" | "gasUsed" | "effectiveGasPrice">> & { txHash?: string | null },
   opts: { reconciled?: boolean; onConfirmedTx?: RunPaymentHooks["onConfirmedTx"] } = {},
-): Promise<PaymentTransaction | null> {
+): Promise<ConfirmedPayment | null> {
   return platformDb.$transaction(async (tx) => {
     const res = await tx.paymentTransaction.updateMany({
       where: { id: paymentId, status: { in: ["INITIATED", "SUBMITTED"] } },
@@ -212,9 +215,9 @@ export async function confirmPayment(
     if (res.count !== 1) return null; // already final — never apply effects twice
     const payment = await tx.paymentTransaction.findUniqueOrThrow({ where: { id: paymentId } });
     await applyMoneyEffects(tx, payment);
-    if (opts.onConfirmedTx) await opts.onConfirmedTx(tx, payment);
-    await issueReceipt(tx, payment);
-    return payment;
+    const receipt = await issueReceipt(tx, payment);
+    if (opts.onConfirmedTx) await opts.onConfirmedTx(tx, payment, receipt);
+    return { ...payment, receipt };
   }, { timeout: 20_000 });
 }
 
@@ -222,8 +225,8 @@ export async function confirmPayment(
 export async function failPayment(
   paymentId: string,
   f: { code: string; reason: string; cancelled?: boolean; reconciled?: boolean },
-): Promise<void> {
-  await platformDb.$transaction(async (tx) => {
+): Promise<string | null> {
+  return platformDb.$transaction(async (tx) => {
     const res = await tx.paymentTransaction.updateMany({
       where: { id: paymentId, status: { in: ["INITIATED", "SUBMITTED"] } },
       data: {
@@ -234,8 +237,9 @@ export async function failPayment(
         reconciled: f.reconciled ?? false,
       },
     });
-    if (res.count !== 1) return; // already final
-    await issueReceipt(tx, await tx.paymentTransaction.findUniqueOrThrow({ where: { id: paymentId } }));
+    if (res.count !== 1) return null; // already final
+    const receipt = await issueReceipt(tx, await tx.paymentTransaction.findUniqueOrThrow({ where: { id: paymentId } }));
+    return receipt.receiptNo;
   });
 }
 
@@ -297,11 +301,11 @@ export async function runPayment(
     if (c.pending && submittedHash) {
       // Broadcast but unconfirmed — the reconciler will settle it either way.
       console.warn(`[payments] ${spec.kind} ${payment.id} pending confirmation (${submittedHash})`);
-      return { ok: false, paymentId: payment.id, code: c.code, reason: c.reason, pending: true, cancelled: false };
+      return { ok: false, paymentId: payment.id, code: c.code, reason: c.reason, pending: true, cancelled: false, receiptNo: null };
     }
     console.error(`[payments] ${spec.kind} ${payment.id} failed (${c.code}):`, (e as Error).message?.slice(0, 200));
-    await failPayment(payment.id, { code: c.code, reason: c.reason, cancelled: c.cancelled });
-    return { ok: false, paymentId: payment.id, code: c.code, reason: c.reason, pending: false, cancelled: c.cancelled };
+    const receiptNo = await failPayment(payment.id, { code: c.code, reason: c.reason, cancelled: c.cancelled });
+    return { ok: false, paymentId: payment.id, code: c.code, reason: c.reason, pending: false, cancelled: c.cancelled, receiptNo };
   }
 
   const txHash = (submittedHash ?? returnedHash) as TxHash;
@@ -316,10 +320,10 @@ export async function runPayment(
   );
   if (confirmed && hooks.afterConfirmed) {
     try {
-      await hooks.afterConfirmed(confirmed);
+      await hooks.afterConfirmed(confirmed, confirmed.receipt);
     } catch (e) {
       console.warn(`[payments] after-confirm hook for ${payment.id} failed:`, (e as Error).message?.slice(0, 160));
     }
   }
-  return { ok: true, paymentId: payment.id, txHash };
+  return { ok: true, paymentId: payment.id, txHash, receiptNo: confirmed?.receipt.receiptNo ?? null };
 }

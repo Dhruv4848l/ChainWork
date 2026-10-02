@@ -27,14 +27,30 @@ export function ClientPhaseControls({
   revisionCount: number;
 }) {
   const [msg, setMsg] = useState<string | null>(null);
+  const [receiptNo, setReceiptNo] = useState<string | null>(null);
   const [forge, setForge] = useState(false);
   const [pending, start] = useTransition();
-  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean }>) =>
+  const run = (fn: () => Promise<{ message?: string; error?: string; released?: boolean; receiptNo?: string | null }>) =>
     start(async () => {
       const r = await fn();
       setMsg(r.message ?? r.error ?? null);
+      setReceiptNo(r.receiptNo ?? null);
       if (r.released) setForge(true);
     });
+  // Failed money attempts are recorded with a receipt too (payment plan P2) — offer it.
+  const note = msg && (
+    <p className="mt-1.5 w-full text-xs text-ink3">
+      {msg}
+      {receiptNo && (
+        <>
+          {" "}
+          <a href={`/api/receipts/${receiptNo}/pdf`} className="font-medium text-bronze hover:underline">
+            Download receipt
+          </a>
+        </>
+      )}
+    </p>
+  );
 
   if (status === "PENDING_FUNDING") {
     if (!fundable) {
@@ -45,7 +61,7 @@ export function ClientPhaseControls({
         <Button variant="primary" size="sm" disabled={pending} onClick={() => run(() => fundPhaseAction(phaseId))}>
           Fund Phase — {formatInr(amount)}
         </Button>
-        {msg && <p className="mt-1.5 text-xs text-ink3">{msg}</p>}
+        {note}
       </div>
     );
   }
@@ -63,7 +79,7 @@ export function ClientPhaseControls({
         <a href="/dashboard/client/complaint" className="text-[12.5px] font-medium text-ember hover:underline">
           Reject / File Complaint
         </a>
-        {msg && <p className="mt-1 w-full text-xs text-ink3">{msg}</p>}
+        {note}
       </div>
     );
   }

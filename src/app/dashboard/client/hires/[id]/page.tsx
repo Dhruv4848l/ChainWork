@@ -10,6 +10,8 @@ import { StubButton } from "@/features/shared/StubButton";
 import { markNoShowAction, proposeSettlementAction } from "@/features/client/actions";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { PhaseReceiptLinks } from "@/features/shared/PhaseReceiptLinks";
+import { getPhaseReceipts } from "@/features/shared/paymentHistory";
 
 const PHASE_NOTE: Record<string, string> = {
   RELEASED: "Approved & released to the worker",
@@ -27,6 +29,7 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
   const { id } = await params;
   const hire = await getClientHireDetail(id, user.id);
   if (!hire) notFound();
+  const receipts = await getPhaseReceipts(hire.phases.map((p) => p.id), user.id);
 
   const phaseViews: PhaseView[] = hire.phases.map((p) => ({
     id: p.id, index: p.index, name: p.name, amount: Number(p.amount),
@@ -53,8 +56,14 @@ export default async function ClientHireDetailPage({ params }: { params: Promise
         revisionCount={p.revisionCount}
       />
     );
-    if (["PENDING_FUNDING", "DELIVERED", "VERIFICATION_WINDOW_OPEN"].includes(p.status)) {
-      actionsByPhase[p.id] = controls;
+    const showControls = ["PENDING_FUNDING", "DELIVERED", "VERIFICATION_WINDOW_OPEN"].includes(p.status);
+    if (showControls || receipts[p.id]) {
+      actionsByPhase[p.id] = (
+        <>
+          {showControls && controls}
+          <PhaseReceiptLinks links={receipts[p.id]} />
+        </>
+      );
     }
   });
 

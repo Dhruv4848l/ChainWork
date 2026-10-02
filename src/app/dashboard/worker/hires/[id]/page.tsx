@@ -9,6 +9,8 @@ import { StubButton } from "@/features/worker/StubButton";
 import { markPhaseDeliveredAction, checkInAction } from "@/features/worker/actions";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
+import { PhaseReceiptLinks } from "@/features/shared/PhaseReceiptLinks";
+import { getPhaseReceipts } from "@/features/shared/paymentHistory";
 
 const PHASE_NOTE: Record<string, string> = {
   RELEASED: "Released to your wallet",
@@ -26,6 +28,7 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
   const { id } = await params;
   const hire = await getWorkerHireDetail(id, user.id);
   if (!hire) notFound();
+  const receipts = await getPhaseReceipts(hire.phases.map((p) => p.id), user.id);
 
   const phaseViews: PhaseView[] = hire.phases.map((p) => ({
     id: p.id,
@@ -45,9 +48,13 @@ export default async function WorkerHireDetailPage({ params }: { params: Promise
   // The worker can mark a FUNDED/IN_PROGRESS phase delivered.
   const actionsByPhase: Record<string, React.ReactNode> = {};
   for (const p of hire.phases) {
-    if (p.status === "FUNDED" || p.status === "IN_PROGRESS") {
+    const canDeliver = p.status === "FUNDED" || p.status === "IN_PROGRESS";
+    if (canDeliver || receipts[p.id]) {
       actionsByPhase[p.id] = (
-        <StubButton label="Mark Delivered" size="sm" run={markPhaseDeliveredAction.bind(null, p.id)} />
+        <>
+          {canDeliver && <StubButton label="Mark Delivered" size="sm" run={markPhaseDeliveredAction.bind(null, p.id)} />}
+          <PhaseReceiptLinks links={receipts[p.id]} />
+        </>
       );
     }
   }

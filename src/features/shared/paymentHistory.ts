@@ -100,3 +100,43 @@ export async function getPaymentHistory(userId: string, take = 50): Promise<Hist
     };
   });
 }
+
+export interface PhaseReceiptLink {
+  receiptNo: string;
+  /** "Funding", "Release", "Failed funding", … */
+  label: string;
+  failed: boolean;
+}
+
+const PHASE_EVENT: Record<string, string> = {
+  FUND: "Funding",
+  RELEASE: "Release",
+  REFUND: "Refund",
+  SPLIT: "Verdict settlement",
+  STAKE_LOCK: "Stake lock",
+  STAKE_REFUND: "Stake return",
+  STAKE_FORFEIT: "Stake forfeit",
+};
+
+/**
+ * Receipts per phase for one hire (payment plan P2.7 — the per-phase receipt links on
+ * the hire pages). Only payments the viewer was a party to; oldest first.
+ */
+export async function getPhaseReceipts(phaseIds: string[], userId: string): Promise<Record<string, PhaseReceiptLink[]>> {
+  if (phaseIds.length === 0) return {};
+  const rows = await platformDb.receipt.findMany({
+    where: {
+      payment: { phaseId: { in: phaseIds }, OR: [{ payerUserId: userId }, { payeeUserId: userId }] },
+    },
+    orderBy: { issuedAt: "asc" },
+    select: { receiptNo: true, outcome: true, payment: { select: { phaseId: true, kind: true, operation: true } } },
+  });
+  const out: Record<string, PhaseReceiptLink[]> = {};
+  for (const r of rows) {
+    const phaseId = r.payment.phaseId!;
+    const event = r.payment.kind === "RELEASE" && r.payment.operation === "autoRelease" ? "Auto-release" : PHASE_EVENT[r.payment.kind] ?? r.payment.kind;
+    const failed = r.outcome === "FAILED";
+    (out[phaseId] ??= []).push({ receiptNo: r.receiptNo, label: failed ? `Failed ${event.toLowerCase()}` : event, failed });
+  }
+  return out;
+}

@@ -21,6 +21,8 @@ export interface ActionState {
   txHash?: string;
   /** The PaymentTransaction recorded for a money action (success or failure). */
   paymentId?: string;
+  /** Its receipt (P2) — failed attempts get one too. */
+  receiptNo?: string | null;
 }
 
 function str(fd: FormData, key: string) {
@@ -166,17 +168,21 @@ export async function fundPhaseAction(phaseId: string): Promise<ActionState> {
     },
     () => chain.fundPhase(phase.id, phase.hire.clientId, phase.hire.workerId, Number(phase.amount)),
     {
-      onConfirmedTx: async (tx) => {
+      onConfirmedTx: async (tx, _payment, receipt) => {
         await tx.notification.create({
-          data: { userId: phase.hire.workerId, type: "ESCROW", title: "Escrow funded", body: `${user.name} funded "${phase.name}". You can start work.` },
+          data: {
+            userId: phase.hire.workerId, type: "ESCROW", title: "Escrow funded",
+            body: `${user.name} funded "${phase.name}". You can start work. Receipt ${receipt.receiptNo}.`,
+            linkUrl: `/dashboard/worker/hires/${phase.hireId}`,
+          },
         });
       },
     },
   );
   revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
   revalidatePath("/dashboard/client/payments");
-  if (!res.ok) return { error: res.reason, paymentId: res.paymentId };
-  return { ok: true, message: "Escrow funded — funds are locked.", txHash: res.txHash, paymentId: res.paymentId };
+  if (!res.ok) return { error: res.reason, paymentId: res.paymentId, receiptNo: res.receiptNo };
+  return { ok: true, message: "Escrow funded — funds are locked.", txHash: res.txHash, paymentId: res.paymentId, receiptNo: res.receiptNo };
 }
 
 /** Approve a delivered phase → the escrow releases to the worker. */
@@ -195,13 +201,13 @@ export async function approvePhaseAction(phaseId: string): Promise<ActionState> 
     },
     () => chain.approveRelease(phase.id),
     {
-      afterConfirmed: async () => {
+      afterConfirmed: async (_payment, receipt) => {
         await refreshBalanceCache(phase.hire.workerId);
         await notify({
           userId: phase.hire.workerId,
           type: "PAYMENT",
           title: "Payment released",
-          body: `${phase.name} was approved — funds released to your wallet.`,
+          body: `${phase.name} was approved — funds released to your wallet. Receipt ${receipt.receiptNo}.`,
           linkUrl: "/dashboard/worker/earnings",
         });
         // If that was the last phase, the hire is complete → opens up reviews.
@@ -211,8 +217,8 @@ export async function approvePhaseAction(phaseId: string): Promise<ActionState> 
   );
   revalidatePath(`/dashboard/client/hires/${phase.hireId}`);
   revalidatePath("/dashboard/client/payments");
-  if (!res.ok) return { error: res.reason, paymentId: res.paymentId };
-  return { ok: true, message: "Approved — funds released to the worker.", released: true, txHash: res.txHash, paymentId: res.paymentId };
+  if (!res.ok) return { error: res.reason, paymentId: res.paymentId, receiptNo: res.receiptNo };
+  return { ok: true, message: "Approved — funds released to the worker.", released: true, txHash: res.txHash, paymentId: res.paymentId, receiptNo: res.receiptNo };
 }
 
 /** Request changes: resets the verification window and bumps the revision counter. */
@@ -268,8 +274,8 @@ export async function markNoShowAction(hireId: string): Promise<ActionState> {
   );
   revalidatePath(`/dashboard/client/hires/${hireId}`);
   revalidatePath("/dashboard/client/payments");
-  if (!res.ok) return { error: res.reason, paymentId: res.paymentId };
-  return { ok: true, message: "Escrow rolled back to you; a strike was applied to the worker.", txHash: res.txHash, paymentId: res.paymentId };
+  if (!res.ok) return { error: res.reason, paymentId: res.paymentId, receiptNo: res.receiptNo };
+  return { ok: true, message: "Escrow rolled back to you; a strike was applied to the worker.", txHash: res.txHash, paymentId: res.paymentId, receiptNo: res.receiptNo };
 }
 
 export async function proposeSettlementAction(hireId: string): Promise<ActionState> {
