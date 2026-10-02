@@ -192,6 +192,7 @@ model User {
   workerProfile WorkerProfile?
   clientProfile ClientProfile?
   wallet        Wallet?
+  walletLinkChallenges WalletLinkChallenge[]
   verificationTokens VerificationToken[]
 
   jobsPosted      Job[]            @relation("ClientJobs")
@@ -480,6 +481,10 @@ model Wallet {
   // of the same index to two users impossible at the database level.
   custodialIndex   Int?     @unique
   externalAddress  String?  @unique
+  /// When the external address was linked (payment plan P3.5). New payouts only go to it
+  /// once the safety hold (WALLET_PAYOUT_COOLDOWN_HOURS, default 24) has passed;
+  /// null = linked before the hold existed (treated as already active).
+  externalLinkedAt DateTime?
   // Cached balance for display; source of truth is on-chain (Phase 9).
   balanceCache     Decimal  @default(0) @db.Decimal(14, 2)
   // Showcase-only demo credit (testing): counts toward the displayed balance,
@@ -613,6 +618,28 @@ model BlogPost {
 
 /// Short-lived token for phone OTP, email verification, and password reset.
 /// We store only a hash of the code/token, never the plaintext.
+/// One attempt to link an external wallet (payment plan P3.5 — Sign-In with Ethereum).
+/// Binds the exact server-built SIWE message (domain, chain, nonce, user, expiry) to a
+/// one-time code sent to the user's phone/email. Consumed once; replays are refused.
+model WalletLinkChallenge {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Lower-cased address the user asked to link.
+  address    String
+  chainId    Int
+  nonce      String    @unique
+  /// The exact EIP-4361 message the wallet must sign.
+  message    String
+  otpHash    String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
 model VerificationToken {
   id        String              @id @default(cuid())
   userId    String

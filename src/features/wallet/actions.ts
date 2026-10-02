@@ -1,15 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { verifyMessage } from "viem";
 import { requireUser } from "@/lib/auth/guards";
 import {
   withdrawCustodial,
   topUpCustodial,
-  linkExternalAddress,
-  unlinkExternalAddress,
 } from "@/lib/chain/wallet";
 import { formatInr } from "@/lib/format";
+import { completeWalletLink, startWalletLink, unlinkWallet } from "@/lib/wallet/link";
 import * as chain from "@/lib/chain/escrow";
 import { demoLockedCreditInr } from "@/lib/chain/demoAdapter";
 import { EscrowRuleError } from "@/lib/chain/escrowRules";
@@ -79,36 +77,35 @@ export async function addFundsAction(amount: number = 10000): Promise<WalletActi
 }
 
 /**
- * Verify ownership of an external wallet by signature, then link it as the payout
- * address. The signature proves control of the address; it moves no funds and grants
- * no spending permission.
+ * Step 1 of linking an external payout wallet (payment plan P3.5): the server issues a
+ * Sign-In with Ethereum message (single-use nonce, 10-minute expiry) and sends a one-time
+ * code to the phone / email on file. Nothing is linked yet.
  */
-export async function verifyAndLinkWalletAction(
-  address: string,
-  message: string,
-  signature: string
-): Promise<WalletActionState> {
+export async function startWalletLinkAction(address: string, chainId: number): Promise<WalletActionState & { siweMessage?: string; sentTo?: string }> {
   const user = await requireUser();
-  try {
-    const valid = await verifyMessage({
-      address: address as `0x${string}`,
-      message,
-      signature: signature as `0x${string}`,
-    });
-    if (!valid) return { error: "Signature didn't match that address." };
-    await linkExternalAddress(user.id, address);
-    revalidatePath("/dashboard/worker/earnings");
-    revalidatePath("/dashboard/client/payments");
-    return { ok: true, message: "External wallet linked — payouts now settle to your address." };
-  } catch (e) {
-    console.error("verifyAndLink failed:", e);
-    return { error: "Could not verify the signature." };
-  }
+  const r = await startWalletLink(user.id, address, chainId);
+  return r.ok ? { ok: true, siweMessage: r.message, sentTo: r.sentTo } : { error: r.error };
+}
+
+/**
+ * Step 2: the wallet's signature over that exact message + the one-time code. Links the
+ * address; new payouts reach it once the safety hold has passed.
+ */
+export async function completeWalletLinkAction(siweMessage: string, signature: string, code: string): Promise<WalletActionState> {
+  const user = await requireUser();
+  const r = await completeWalletLink(user.id, siweMessage, signature, code);
+  if (!r.ok) return { error: r.error };
+  revalidatePath("/dashboard/worker/earnings");
+  revalidatePath("/dashboard/client/payments");
+  const when = r.activeFrom
+    ? r.activeFrom.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) + " IST"
+    : "now";
+  return { ok: true, message: `Wallet linked. New escrow payouts go to it from ${when} (24-hour safety hold).` };
 }
 
 export async function unlinkWalletAction(): Promise<WalletActionState> {
   const user = await requireUser();
-  await unlinkExternalAddress(user.id);
+  await unlinkWallet(user.id);
   revalidatePath("/dashboard/worker/earnings");
   revalidatePath("/dashboard/client/payments");
   return { ok: true, message: "Switched back to your ChainWork custodial wallet." };

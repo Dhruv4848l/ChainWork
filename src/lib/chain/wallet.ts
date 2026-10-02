@@ -4,6 +4,7 @@ import { provisionWallet } from "./keystore";
 import { adapter } from "./escrow";
 import { demoLockedCreditInr } from "./demoAdapter";
 import { platformDb } from "@/lib/platformDb";
+import { payoutActiveFrom } from "@/lib/wallet/siwe";
 
 import { payoutAddressFor } from "./payout";
 
@@ -28,6 +29,8 @@ export { payoutAddressFor };
 export interface WalletSummary {
   custodialAddress: `0x${string}`;
   externalAddress: string | null;
+  /** ISO time the linked wallet starts receiving new payouts (P3.5 safety hold); null = already active / none. */
+  externalActiveFrom: string | null;
   /** Where releases are paid for NEW fundings (custodial while a fresh link is cooling down). */
   payoutAddress: `0x${string}`;
   currency: string;
@@ -71,7 +74,11 @@ export async function getWalletSummary(userId: string): Promise<WalletSummary> {
     payoutAddressFor(userId),
   ]);
   const external = wallet?.externalAddress && isAddress(wallet.externalAddress) ? wallet.externalAddress : null;
-  const base = { custodialAddress: custodial, externalAddress: external, payoutAddress: payout, currency: "INR", ...totals };
+  const activeFrom = external ? payoutActiveFrom(wallet?.externalLinkedAt ?? null) : null;
+  const base = {
+    custodialAddress: custodial, externalAddress: external, payoutAddress: payout, currency: "INR", ...totals,
+    externalActiveFrom: activeFrom && activeFrom > new Date() ? activeFrom.toISOString() : null,
+  };
 
   try {
     const chain = adapter();
@@ -118,12 +125,4 @@ export async function topUpCustodial(userId: string, amountInr: number): Promise
   return adapter().mintInr(address, amountInr);
 }
 
-/** Link a verified external (self-custody) address as the payout target. */
-export async function linkExternalAddress(userId: string, address: string): Promise<void> {
-  if (!isAddress(address)) throw new Error("Invalid address");
-  await platformDb.wallet.updateMany({ where: { userId }, data: { externalAddress: address } });
-}
-
-export async function unlinkExternalAddress(userId: string): Promise<void> {
-  await platformDb.wallet.updateMany({ where: { userId }, data: { externalAddress: null } });
-}
+// Linking / unlinking an external wallet lives in src/lib/wallet/link.ts (SIWE + OTP + safety hold, P3.5).
