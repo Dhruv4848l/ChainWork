@@ -542,9 +542,19 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   `/api/health/chain` now also proves the escrow is v2 and each asset is allowlisted;
   `scripts/open-demo-escrows.mts` lists demo-money escrows to close before switching.
 
-**Resume here** — the payment plan (P0–P7) is complete on the local chain.
-1. **Go live on Amoy (user step, needs the deployer key + a private mnemonic):** follow
-   [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md) end to end.
+**Deployed (2026-10-03):** P0–P7 is live on https://chain-work-afdm.vercel.app in **demo
+mode** — `PAYMENT_MODE=demo` set on Vercel (Production + Preview; Preview previously had no
+mode and would have run testnet against the production DB), the 6 platform migrations applied
+to Neon, `backfill-payments` run (3 payments, 3 receipts), `main` fast-forwarded to
+`payment-system`. `npm run test:e2e:remote` against the live site: **9/9 pass** (fixture
+accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
+
+**Resume here** — the payment plan (P0–P7) is complete and live in demo mode.
+1. **Go live on Amoy (user step, needs the deployer key):** follow
+   [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md) end to end. The live
+   health check already shows what's left: production's `CHAIN_MNEMONIC` is the **public
+   Hardhat phrase** (replace it), the escrow at `0xfd80…0dd8` is v1 (redeploy v2), the
+   relayer lacks ATTESTOR/DISPUTE roles and has ~0.0002 POL of gas.
 2. Admin tooling: escrows the reconciler flags as "not adopted" (tampered / short wallet
    payments) only appear in the cron log — give ADM-07/08 a view + a refund-to-payer action.
 3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the
