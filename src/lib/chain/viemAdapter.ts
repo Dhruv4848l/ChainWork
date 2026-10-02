@@ -19,7 +19,7 @@ import {
   assertChainWritable,
 } from "./config";
 import { relayerAccount, accountForUser, provisionWallet } from "./keystore";
-import { ensureGas } from "./gas";
+import { ensureGas, recoverGas } from "./gas";
 import { payoutAddressFor } from "./payout";
 import { ESCROW_STATUS_NAMES, EscrowRuleError } from "./escrowRules";
 import { keyFor } from "./keys";
@@ -191,6 +191,8 @@ export const viemAdapter: ChainAdapter = {
     if (bal === BigInt(0)) return null;
     await ensureGas(account.address); // the transfer out is signed by the user
     const txHash = await write(account, { address: TOKEN_ADDRESS, abi: erc20Abi, functionName: "transfer", args: [relayerAccount().address, bal] }, true);
+    // The wallet is empty now: return the sponsored gas it no longer needs (P3.7).
+    await recoverGas(account);
     return { txHash, amountInr: fromTokenUnits(bal) };
   },
 
