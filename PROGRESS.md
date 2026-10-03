@@ -556,7 +556,7 @@ accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
    Hardhat phrase~~ **replaced 2026-10-03** (new relayer `0x4170…6258`, wallets re-keyed by
    `scripts/rotate-chain-mnemonic.mts`); the escrow at `0xfd80…0dd8` is v1 — redeploy v2
    (`RELAYER_ADDRESS=0x4170d656a439E1682004f9Fb1d3302442a076258 npm run deploy:amoy` in
-   `contracts/`, needs ~0.2 test POL on deployer `0x89A5363b95De671f1C77aEfdcB26CeA707746781`),
+   `contracts/`, needs ~0.11 test POL on deployer `0x6a04Fa4D1CB867106b3A362066a96E2921834cF8`, which has 0.1; add `EXISTING_TOKEN_ADDRESS=0x1be17798611E2e4aC0C6d1E018ed8e5c23B77eDC` to reuse cwINR),
    then fund the relayer with test POL.
 2. Admin tooling: escrows the reconciler flags as "not adopted" (tampered / short wallet
    payments) only appear in the cron log — give ADM-07/08 a view + a refund-to-payer action.
