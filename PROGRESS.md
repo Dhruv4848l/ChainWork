@@ -554,10 +554,14 @@ accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
    [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md) end to end. The live
    health check already shows what's left: ~~production's `CHAIN_MNEMONIC` is the public
    Hardhat phrase~~ **replaced 2026-10-03** (new relayer `0x4170…6258`, wallets re-keyed by
-   `scripts/rotate-chain-mnemonic.mts`); the escrow at `0xfd80…0dd8` is v1 — redeploy v2
-   (`RELAYER_ADDRESS=0x4170d656a439E1682004f9Fb1d3302442a076258 npm run deploy:amoy` in
-   `contracts/`, needs ~0.11 test POL on deployer `0x6a04Fa4D1CB867106b3A362066a96E2921834cF8`, which has 0.1; add `EXISTING_TOKEN_ADDRESS=0x1be17798611E2e4aC0C6d1E018ed8e5c23B77eDC` to reuse cwINR),
-   then fund the relayer with test POL.
+   `scripts/rotate-chain-mnemonic.mts`); ~~the escrow is v1~~ **PhaseEscrow v2 deployed
+   2026-10-06** — escrow `0xe10140d24b60C07F645BC3385ddcBF7E0d0879c1`, test USDT
+   `0x7600924f974aB25FDbd18272CEf134cdA58145e2`, test USDC `0xDc1F13B70339aF15C7BcA4F55Be16716A466c82d`,
+   cwINR reused `0x1be17798611E2e4aC0C6d1E018ed8e5c23B77eDC`; relayer roles granted; set on
+   Vercel (Production + Preview). Cost 0.125 POL at a 35 gwei cap (`AMOY_GAS_PRICE_GWEI`);
+   deployer `0x6a04…4cF8` has 0.075 POL left. **Left before PAYMENT_MODE=testnet:** fund the
+   relayer `0x4170d656a439E1682004f9Fb1d3302442a076258` (health check wants ≥0.5 POL;
+   `CHAIN_RELAYER_MIN_GAS` lowers it for a short smoke test).
 2. Admin tooling: escrows the reconciler flags as "not adopted" (tampered / short wallet
    payments) only appear in the cron log — give ADM-07/08 a view + a refund-to-payer action.
 3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the

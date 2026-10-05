@@ -28,6 +28,9 @@ module.exports = {
       url: AMOY_RPC_URL,
       chainId: 80002,
       accounts: DEPLOYER_KEY ? [DEPLOYER_KEY] : [],
+      // Amoy's RPC often suggests a 150+ gwei tip while the base fee is ~0; cap the price
+      // (e.g. AMOY_GAS_PRICE_GWEI=35) so a deploy costs what the network really needs.
+      ...(process.env.AMOY_GAS_PRICE_GWEI ? { gasPrice: Math.round(Number(process.env.AMOY_GAS_PRICE_GWEI) * 1e9) } : {}),
     },
   },
 };
