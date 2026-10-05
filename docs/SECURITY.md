@@ -88,8 +88,11 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   leaked per request). Its setup now runs only in the browser.
 - **[OK] Receipts** return 404 (not 403) to anyone but the payer, payee or a payments admin —
   E2E-tested.
-- **[OPEN] Flagged escrows need an admin action.** "Not adopted" escrows show only in the
-  cron log; add an admin view + refund-to-payer before real users pay from their own wallets.
+- **[PARTLY FIXED 2026-10-06] Flagged escrows.** Every refused funding is now recorded
+  (`FlaggedEscrow`, one row per phase, re-seen each tick) and listed on ADM-10 "Flagged wallet
+  payments" with what's in escrow, who paid and why it was refused; an admin closes it with a
+  note (audit-logged). **Still open:** a refund-to-payer action — on the current contract a
+  refunded escrow slot can never be funded again, so a safe refund needs a contract change.
 
 ## Summary
 One real finding fixed (login rate limiting); the standing access-control, session, injection, and

@@ -431,8 +431,39 @@ model Phase {
 
   escrowTransactions EscrowTransaction[]
   payments           PaymentTransaction[]
+  flag               FlaggedEscrow?
 
   @@unique([hireId, index])
+}
+
+/// A funding found on-chain that the reconciler REFUSED to adopt: a wallet payment sent to
+/// the wrong worker, short of the quote, or in the wrong currency. The money sits in escrow
+/// and was never credited to the phase. Admins review it on ADM-10, read through the bridge.
+/// The reconciler re-sees it every tick (lastSeenAt); an admin's review closes it.
+model FlaggedEscrow {
+  id            String     @id @default(cuid())
+  phaseId       String     @unique
+  phase         Phase      @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  reason        String
+  /// What the escrow contract holds for this phase (plain on-chain facts).
+  onchainClient String
+  onchainWorker String
+  asset         String
+  amountRaw     String
+  status        FlagStatus @default(OPEN)
+  note          String?
+  /// Admin label (the admin DB is separate — no foreign key crosses databases).
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  detectedAt    DateTime   @default(now())
+  lastSeenAt    DateTime   @default(now())
+
+  @@index([status, detectedAt])
+}
+
+enum FlagStatus {
+  OPEN
+  REVIEWED
 }
 
 /// On-chain escrow events (fund / release / refund / split / stake ops). Also the

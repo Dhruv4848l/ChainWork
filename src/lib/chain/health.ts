@@ -27,6 +27,8 @@ export interface HealthCheck {
   name: string;
   ok: boolean;
   detail: string;
+  /** false = only matters for testnet / mainnet (demo mode never touches the chain). */
+  required?: boolean;
 }
 
 export interface ChainHealth {
@@ -35,6 +37,10 @@ export interface ChainHealth {
   modeNotice: string;
   chainId: number;
   relayer: string | null;
+  /** Would every chain check pass, i.e. could PAYMENT_MODE switch to testnet right now? */
+  testnetReady: boolean;
+  /** Plain-language summary of what's left before testnet (empty when ready). */
+  testnetTodo: string[];
   checks: HealthCheck[];
   at: string;
 }
@@ -57,7 +63,7 @@ export async function getChainHealth(): Promise<ChainHealth> {
     checks.push({ name: "payment config", ok: true, detail: `PAYMENT_MODE resolves to "${mode}"` });
   } catch (e) {
     const detail = e instanceof PaymentConfigError ? e.message : String(e);
-    return { ok: false, mode: "invalid", modeNotice: detail, chainId: CHAIN_ID, relayer: null, checks: [{ name: "payment config", ok: false, detail }], at };
+    return { ok: false, mode: "invalid", modeNotice: detail, chainId: CHAIN_ID, relayer: null, testnetReady: false, testnetTodo: [detail], checks: [{ name: "payment config", ok: false, detail }], at };
   }
   const demo = mode === "demo";
 
@@ -132,7 +138,14 @@ export async function getChainHealth(): Promise<ChainHealth> {
     checks.push({ name: "rpc", ok: false, detail: `unreachable: ${(e as Error).message.slice(0, 120)}` });
   }
 
-  // Demo mode doesn't depend on the chain; testnet/mainnet need every check green.
+  // Demo mode doesn't depend on the chain; testnet/mainnet need every check green. In demo
+  // the chain checks are reported as not required, so red ones read as "to do before
+  // testnet", not as an outage.
+  checks[0].required = true;
+  const chainChecks = checks.slice(1);
+  for (const c of chainChecks) c.required = !demo;
+  const testnetReady = chainChecks.length > 0 && chainChecks.every((c) => c.ok);
+  const testnetTodo = chainChecks.filter((c) => !c.ok).map((c) => `${c.name}: ${c.detail}`);
   const ok = demo ? checks[0].ok : checks.every((c) => c.ok);
-  return { ok, mode, modeNotice: paymentModeInfo(mode as never).notice, chainId: CHAIN_ID, relayer, checks, at };
+  return { ok, mode, modeNotice: paymentModeInfo(mode as never).notice, chainId: CHAIN_ID, relayer, testnetReady, testnetTodo, checks, at };
 }

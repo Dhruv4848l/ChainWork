@@ -210,3 +210,18 @@ export async function updatePlatformConfigAction(key: string, value: string): Pr
   revalidatePath("/admin/settings");
   return { ok: true, message: `${key} updated.` };
 }
+
+// ---------------------------------------------------------------------------
+// ADM-10 flagged wallet payments — an admin records how a refused funding was handled
+// ---------------------------------------------------------------------------
+export async function reviewFlagAction(flagId: string, note: string): Promise<AdminActionState> {
+  const admin = await requireAdminAccess("payments");
+  const text = note.trim();
+  if (text.length < 5) return { error: "Write a short note on what was done (at least 5 characters)." };
+  if (text.length > 1000) return { error: "Keep the note under 1,000 characters." };
+  const closed = await bridge.bridgeReviewFlag(flagId, text, `${admin.name} (${admin.role})`);
+  if (!closed) return { error: "This flag was already reviewed." };
+  await writeAudit({ actorAdminId: admin.id, action: "FLAG_REVIEWED", targetType: "FlaggedEscrow", targetId: flagId, after: { note: text } });
+  revalidatePath("/admin/payments");
+  return { ok: true, message: "Marked reviewed." };
+}

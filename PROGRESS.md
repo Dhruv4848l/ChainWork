@@ -562,8 +562,13 @@ accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
    deployer `0x6a04…4cF8` has 0.075 POL left. **Left before PAYMENT_MODE=testnet:** fund the
    relayer `0x4170d656a439E1682004f9Fb1d3302442a076258` (health check wants ≥0.5 POL;
    `CHAIN_RELAYER_MIN_GAS` lowers it for a short smoke test).
-2. Admin tooling: escrows the reconciler flags as "not adopted" (tampered / short wallet
-   payments) only appear in the cron log — give ADM-07/08 a view + a refund-to-payer action.
+2. ~~Admin tooling for flagged escrows~~ **done 2026-10-06:** `FlaggedEscrow` (migration
+   `flagged_escrow` — apply to Neon with `npm run db:deploy` before deploying), ADM-10
+   "Flagged wallet payments" with review notes (audit-logged), clear reasons ("paid 15.27 USDT,
+   short of the 15.58 USDT quoted"). Left: an alert, and a refund action (needs a contract
+   change — a refunded escrow slot can't be funded again). Also done: CL-08 "Fund ₹X" opens the
+   payment window; `/api/health/chain` adds `testnetReady` / `testnetTodo`, and marks chain
+   checks `required: false` in demo mode.
 3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the
    walkthrough .docx from the new screenshots.
 4. P6 left for later: Sepolia / BNB testnet asset sets (6.6b/c), a network-fee estimate in

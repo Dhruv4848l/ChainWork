@@ -10,7 +10,8 @@ import { FundingVerificationError, verifyPhaseFunding } from "@/lib/chain/verify
 import { TOKEN_ADDRESS } from "@/lib/chain/config";
 import { toTokenUnits } from "@/lib/chain/viemAdapter";
 import type { EscrowView } from "@/lib/chain/types";
-import { meetsQuote } from "./quoteMath";
+import { formatAsset, meetsQuote } from "./quoteMath";
+import { escrowAssets } from "./escrowAssets";
 import type { PaymentAsset } from "./service";
 
 /*
@@ -134,6 +135,14 @@ type Adoption =
  * tolerance). Anything else (underpaid, wrong currency, wrong worker) is flagged, never
  * adopted: adopting it would mark a phase funded that isn't (P7 security regression).
  */
+/** "15.26 USDT" — a raw on-chain amount in the asset's own units, readable for admins. */
+function describeAmount(raw: bigint, asset: string): string {
+  const a = sameAddr(asset, ZERO_ADDRESS) ? escrowAssets().find((x) => x.address === null) : escrowAssets().find((x) => sameAddr(x.address, asset));
+  if (!a) return `${raw} units of token ${asset.slice(0, 6)}…${asset.slice(-4)}`;
+  const shown = formatAsset(raw, a.decimals);
+  return `${shown === "0" && raw > BigInt(0) ? "less than 0.000001" : shown} ${a.symbol}`;
+}
+
 async function adoptableFunding(phase: { id: string; amount: unknown; hire: { clientId: string; workerId: string } }, onchain: EscrowView): Promise<Adoption> {
   if (!(await isWorkersAddress(phase.hire.workerId, onchain.worker))) {
     return { ok: false, reason: `funded on-chain to unexpected worker ${onchain.worker}` };
@@ -143,7 +152,7 @@ async function adoptableFunding(phase: { id: string; amount: unknown; hire: { cl
 
   if (sameAddr(onchain.asset, TOKEN_ADDRESS)) {
     if (onchain.amountRaw < toTokenUnits(String(phase.amount))) {
-      return { ok: false, reason: `funded on-chain with less cwINR than the phase amount` };
+      return { ok: false, reason: `paid ${describeAmount(onchain.amountRaw, onchain.asset)}, short of the ₹${Number(phase.amount).toLocaleString("en-IN")} phase` };
     }
     return { ok: true, signer: fromCustodial ? "RELAYER" : "EXTERNAL_WALLET", asset: null };
   }
@@ -153,7 +162,14 @@ async function adoptableFunding(phase: { id: string; amount: unknown; hire: { cl
   const q = quotes.find(
     (x) => sameAddr(x.assetAddress, assetAddress) && sameAddr(x.workerAddress, onchain.worker) && meetsQuote(onchain.amountRaw, BigInt(x.assetAmount)),
   );
-  if (!q) return { ok: false, reason: `funded on-chain in ${onchain.asset} without a matching quote (wrong currency or underpaid)` };
+  if (!q) {
+    const paid = describeAmount(onchain.amountRaw, onchain.asset);
+    const sameAsset = quotes.filter((x) => sameAddr(x.assetAddress, assetAddress));
+    if (!sameAsset.length) return { ok: false, reason: `paid ${paid} — a currency no quote for this phase asked for` };
+    const latest = sameAsset[0];
+    if (!sameAddr(latest.workerAddress, onchain.worker)) return { ok: false, reason: `paid ${paid} to a different worker address than quoted` };
+    return { ok: false, reason: `paid ${paid}, short of the ${describeAmount(BigInt(latest.assetAmount), onchain.asset)} quoted` };
+  }
   return {
     ok: true,
     signer: "EXTERNAL_WALLET",
@@ -182,8 +198,16 @@ async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
       const fix = repairFor(phase.status, onchain.status);
       const adoption = fix?.kind === "FUND" ? await adoptableFunding(phase, onchain) : null;
       if (adoption && !adoption.ok) {
-        // A tampered / short wallet payment sits in escrow. Never adopt it — flag it for
-        // an admin (the money can be refunded to the client by the relayer).
+        // A tampered / short wallet payment sits in escrow. Never adopt it — flag it for an
+        // admin (ADM-10 "Flagged wallet payments"). Re-seen every tick; a review closes it.
+        await platformDb.flaggedEscrow.upsert({
+          where: { phaseId: phase.id },
+          create: {
+            phaseId: phase.id, reason: adoption.reason, onchainClient: onchain.client, onchainWorker: onchain.worker,
+            asset: onchain.asset, amountRaw: onchain.amountRaw.toString(), detectedAt: now, lastSeenAt: now,
+          },
+          update: { reason: adoption.reason, onchainClient: onchain.client, onchainWorker: onchain.worker, asset: onchain.asset, amountRaw: onchain.amountRaw.toString(), lastSeenAt: now },
+        });
         errors.push(`drift ${phase.id}: ${adoption.reason} — not adopted`);
       } else if (fix) {
         // A SPLIT's worker share can't be recovered from the escrow's final state, so a

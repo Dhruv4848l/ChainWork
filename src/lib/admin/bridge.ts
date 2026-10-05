@@ -7,6 +7,8 @@ import { runPayment } from "@/lib/payments/service";
 import { escrowAddressLabel, refreshBalanceCache } from "@/lib/payments/parties";
 import { maybeCompleteHire } from "@/lib/hires";
 import type { ReceiptContent } from "@/lib/receipts/content";
+import { escrowAssets } from "@/lib/payments/escrowAssets";
+import { formatAsset } from "@/lib/payments/quoteMath";
 
 /** ADM-09 pending confirmations (the Phase 8 auto-release countdown data). */
 export async function bridgePendingConfirmations() {
@@ -266,4 +268,56 @@ export async function bridgeReceipt(receiptNo: string) {
     select: { receiptNo: true, content: true, contentHash: true },
   });
   return r ? { receiptNo: r.receiptNo, content: r.content as unknown as ReceiptContent, contentHash: r.contentHash } : null;
+}
+
+// ---------------------------------------------------------------------------
+// ADM-10 flagged wallet payments — fundings the reconciler refused to adopt
+// ---------------------------------------------------------------------------
+const ZERO = "0x0000000000000000000000000000000000000000";
+const short = (a: string) => (a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+
+/** Open flags first, newest first; addresses shortened, names only (no contact details). */
+export async function bridgeFlaggedEscrows() {
+  const rows = await platformDb.flaggedEscrow.findMany({
+    orderBy: [{ status: "asc" }, { detectedAt: "desc" }],
+    take: 100,
+    include: { phase: { select: { name: true, amount: true, hireId: true, hire: { select: { client: { select: { name: true } }, worker: { select: { name: true } } } } } } },
+  });
+  const assets = escrowAssets();
+  return rows.map((r) => {
+    const a = r.asset.toLowerCase() === ZERO ? assets.find((x) => x.address === null) : assets.find((x) => x.address?.toLowerCase() === r.asset.toLowerCase());
+    let amount = r.amountRaw;
+    try {
+      amount = a ? `${formatAsset(BigInt(r.amountRaw), a.decimals)} ${a.symbol}` : `${r.amountRaw} units of ${short(r.asset)}`;
+    } catch {
+      /* keep the raw value */
+    }
+    return {
+      id: r.id,
+      status: r.status,
+      reason: r.reason,
+      phase: r.phase.name,
+      phaseAmountInr: Number(r.phase.amount),
+      hireRef: r.phase.hireId.slice(-8),
+      client: r.phase.hire.client.name,
+      worker: r.phase.hire.worker.name,
+      paidBy: short(r.onchainClient),
+      paidTo: short(r.onchainWorker),
+      amount,
+      detectedAt: r.detectedAt,
+      lastSeenAt: r.lastSeenAt,
+      note: r.note,
+      reviewedBy: r.reviewedBy,
+      reviewedAt: r.reviewedAt,
+    };
+  });
+}
+
+/** Close an OPEN flag with the reviewer's note. False when it was already reviewed. */
+export async function bridgeReviewFlag(id: string, note: string, reviewer: string): Promise<boolean> {
+  const r = await platformDb.flaggedEscrow.updateMany({
+    where: { id, status: "OPEN" },
+    data: { status: "REVIEWED", note, reviewedBy: reviewer, reviewedAt: new Date() },
+  });
+  return r.count === 1;
 }

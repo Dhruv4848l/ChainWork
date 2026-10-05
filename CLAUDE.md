@@ -459,7 +459,9 @@ vars at Amoy + a real relayer key.
   `[SMS mock] → …` line → OTP verify). Restart the dev server after changing SMS env vars.
 - **Email is real too — `src/lib/email.ts`** (same pattern): `EMAIL_PROVIDER` = `"resend"`
   (needs `RESEND_API_KEY`; without a verified domain, from `onboarding@resend.dev` TO the Resend
-  account's own email only), `"brevo"` (needs `BREVO_API_KEY`), or `"mock"`/unset. `EMAIL_FROM`
+  account's own email only), `"brevo"` (needs `BREVO_API_KEY`), `"gmail"` (own Gmail over SMTP via
+  nodemailer — emails anyone, ~500/day; needs `GMAIL_USER` + `GMAIL_APP_PASSWORD`, a Google App
+  password; `EMAIL_FROM` gives only the display name), or `"mock"`/unset. `EMAIL_FROM`
   sets the sender; `absoluteUrl()` builds emailed links from `APP_BASE_URL` (localhost:3000 dev).
   `emailShell()`/`emailButton()` give a minimal branded dark template. Same fail-safe fallback to
   a console log (`[EMAIL mock] … | link: …`). Wired into: `sendEmailVerification` (verify link),
@@ -641,7 +643,12 @@ Three gaps between the built product and the story we demo were closed here.
   actions mid-compile. Screenshot numbers are referenced by DEMO_WALKTHROUGH.md: don't add
   shots mid-run.
 - **Go-live:** `docs/RUNBOOK_DEMO_TO_TESTNET.md`; `/api/health/chain` must be all green
-  (includes v2 + asset allowlist checks).
+  (includes v2 + asset allowlist checks; `testnetReady` / `testnetTodo` summarise what's left —
+  in demo mode chain checks report `required: false`). Amoy deploys: `AMOY_GAS_PRICE_GWEI=35`
+  caps the fee (the RPC over-suggests tips). **Live on Amoy:** PhaseEscrow v2 `0xe101…79c1`.
+- **Flagged wallet payments:** the reconciler never adopts a short / wrong-worker / wrong-asset
+  funding; it upserts a `FlaggedEscrow` row, which ADM-10 lists (via the bridge) for an admin to
+  review with a note. No refund button: a refunded escrow slot can't be re-funded on v2.
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)

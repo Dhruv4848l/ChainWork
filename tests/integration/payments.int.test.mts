@@ -26,6 +26,7 @@ import { createQuote, type QuoteView } from "@/lib/payments/quotes";
 import { reconcile } from "@/lib/payments/reconcile";
 import { recordVerifiedPayment, runPayment, type PaymentOutcome, type PaymentSpec } from "@/lib/payments/service";
 import { completeWalletLink, startWalletLink } from "@/lib/wallet/link";
+import { bridgeFlaggedEscrows, bridgeReviewFlag } from "@/lib/admin/bridge";
 import { makeSignedHire, makeUser, type TestUser } from "../fixtures";
 
 const RPC = process.env.CHAIN_RPC_URL ?? "http://127.0.0.1:8545";
@@ -102,6 +103,11 @@ async function notAdopted(phaseId: string) {
   const rec = await reconcile();
   assert.ok(rec.errors.some((e) => e.includes(phaseId) && e.includes("not adopted")), `reconciler should flag ${phaseId}`);
   assert.equal(await phaseStatus(phaseId), "PENDING_FUNDING", "the phase must not become funded");
+  // ...and records it for the admins' review desk (ADM-10), once per phase.
+  const flags = await db.flaggedEscrow.findMany({ where: { phaseId } });
+  assert.equal(flags.length, 1, "exactly one flag per phase");
+  assert.equal(flags[0].status, "OPEN");
+  return flags[0];
 }
 
 const phaseStatus = async (id: string) => (await db.phase.findUniqueOrThrow({ where: { id } })).status;
@@ -164,7 +170,21 @@ describe("security regressions — a forged or tampered payment never counts", (
     const r = refused(await recordVerifiedPayment(walletSpec(phaseId, hireId, q), hash, check(phaseId, q, hash)));
     assert.equal(r.code, "WRONG_WORKER");
     assert.match(r.receiptNo ?? "", /^CW-FAIL-/, "a failed attempt still gets a receipt");
-    await notAdopted(phaseId);
+    const flag = await notAdopted(phaseId);
+    assert.match(flag.reason, /unexpected worker/);
+    assert.equal(flag.onchainWorker.toLowerCase(), PAYER.toLowerCase());
+
+    // The admin desk shows it, and a review closes it for good: the next tick re-sees the
+    // escrow but neither duplicates nor re-opens the flag.
+    const listed = (await bridgeFlaggedEscrows()).find((f) => f.id === flag.id);
+    assert.ok(listed && listed.status === "OPEN" && /USDT$/.test(listed.amount), "listed with the amount in USDT");
+    assert.equal(await bridgeReviewFlag(flag.id, "Contacted the payer; re-paying correctly.", "Test Admin (ROOT)"), true);
+    assert.equal(await bridgeReviewFlag(flag.id, "again", "Test Admin (ROOT)"), false, "a reviewed flag can't be reviewed twice");
+    await reconcile();
+    const after = await db.flaggedEscrow.findMany({ where: { phaseId } });
+    assert.equal(after.length, 1);
+    assert.equal(after[0].status, "REVIEWED");
+    assert.ok(after[0].lastSeenAt >= flag.lastSeenAt, "re-seen by the reconciler");
   });
 
   it("refuses an underpayment beyond the 1% tolerance", async (t) => {

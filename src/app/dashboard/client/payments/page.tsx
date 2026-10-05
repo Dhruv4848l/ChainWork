@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/auth/guards";
 import { getClientPayments, getClientProfile } from "@/features/client/queries";
 import { getWalletSummary } from "@/lib/chain/wallet";
 import { AddFundsButton } from "@/features/client/AddFundsButton";
-import { FundDueButton } from "@/features/client/FundDueButton";
+import { FundDueList } from "@/features/client/FundDueList";
 import { ExternalWalletConnect } from "@/features/wallet/ExternalWalletConnect";
 import { formatInr } from "@/lib/format";
 import { PaymentModeBanner } from "@/features/shared/PaymentModeBanner";
@@ -57,16 +57,7 @@ export default async function ClientPaymentsPage() {
       <div className="grid gap-3.5 lg:grid-cols-[1fr_1.6fr]">
         <Card className="p-6">
           <h3 className="mb-3.5 text-[15px] font-semibold text-ink">Next phase funding due</h3>
-          {pay.dueToFund.length === 0 && <p className="text-sm text-ink3">Nothing due to fund.</p>}
-          {pay.dueToFund.map((p) => (
-            <div key={p.id} className="flex items-center justify-between border-b border-hair py-3 last:border-b-0">
-              <span>
-                <span className="block text-[13px] font-medium text-ink">{p.name}</span>
-                <span className="block text-[11px] text-ink3">{p.hireTitle}</span>
-              </span>
-              <FundDueButton phaseId={p.id} amount={Number(p.amount)} />
-            </div>
-          ))}
+          <FundDueList items={pay.dueToFund.map((p) => ({ id: p.id, name: p.name, hireTitle: p.hireTitle, amount: Number(p.amount) }))} />
         </Card>
 
         <Card className="overflow-hidden p-0">
