@@ -48,10 +48,9 @@ real money.
 11. **Monitoring & alerting.** On-chain tx failure rates, escrow balances vs. expected, jury health
     metrics (watch closely while the juror pool is small), auth anomalies, audit-log review.
 12. **Backups & disaster recovery** for both databases, and a tested restore.
-13. **Flagged wallet payments.** Escrows the reconciler refuses to adopt are recorded and
-    reviewed on ADM-10 (done 2026-10-06). Still needed: an alert when one appears, and a
-    refund-to-payer action — which needs PhaseEscrow to allow re-funding a refunded phase (or
-    per-attempt escrow keys), since a refunded slot is closed for good today.
+13. **Flagged wallet payments.** Recorded, alerted (`OPS_ALERT_EMAIL` + sidebar badge) and
+    refundable to the payer from ADM-10 (done 2026-10-06; refund needs PhaseEscrow v3 deployed).
+    Include v3's re-fund-after-refund rule in the audit scope.
 14. **Re-run all four test layers against the release candidate** (`npm test`,
     `test:contracts`, `test:integration`, `test:e2e`) and follow
     [RUNBOOK_DEMO_TO_TESTNET.md](RUNBOOK_DEMO_TO_TESTNET.md) on a staging copy first.

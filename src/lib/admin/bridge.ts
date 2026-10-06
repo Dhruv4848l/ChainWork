@@ -3,12 +3,13 @@ import { platformDb } from "@/lib/platformDb";
 import { getPendingConfirmations } from "@/lib/escrow/pendingConfirmations";
 import { PHASE_TRANSITIONS } from "@/lib/escrow/phaseMachine";
 import * as chain from "@/lib/chain/escrow";
-import { runPayment } from "@/lib/payments/service";
+import { FLAGGED_REFUND, runPayment } from "@/lib/payments/service";
 import { escrowAddressLabel, refreshBalanceCache } from "@/lib/payments/parties";
 import { maybeCompleteHire } from "@/lib/hires";
 import type { ReceiptContent } from "@/lib/receipts/content";
 import { escrowAssets } from "@/lib/payments/escrowAssets";
 import { formatAsset } from "@/lib/payments/quoteMath";
+import { CHAIN_ID, TOKEN_ADDRESS } from "@/lib/chain/config";
 
 /** ADM-09 pending confirmations (the Phase 8 auto-release countdown data). */
 export async function bridgePendingConfirmations() {
@@ -325,4 +326,76 @@ export async function bridgeReviewFlag(id: string, note: string, reviewer: strin
 /** Open flagged wallet payments — the ADM-10 badge in the console sidebar. */
 export async function bridgeOpenFlagCount(): Promise<number> {
   return platformDb.flaggedEscrow.count({ where: { status: "OPEN" } });
+}
+
+/** Can the deployed escrow take a refunded phase's funding again (PhaseEscrow v3+)? */
+export async function bridgeEscrowSupportsRefund(): Promise<boolean> {
+  try {
+    return (await chain.contractVersion()) >= 3;
+  } catch {
+    return false;
+  }
+}
+
+export type FlagRefundResult = { ok: true; receiptNo: string | null; message: string } | { ok: false; error: string; receiptNo?: string | null };
+
+/**
+ * Return a flagged (refused) funding to whoever paid it, then close the flag. Only on a v3
+ * escrow: refunding on v1/v2 would close the phase's escrow slot for good. The money goes
+ * back in the asset it came in, to the address that sent it; the phase stays awaiting funding
+ * and the books don't move (the funding was never credited).
+ */
+export async function bridgeRefundFlag(flagId: string, reviewer: string): Promise<FlagRefundResult> {
+  const flag = await platformDb.flaggedEscrow.findUnique({
+    where: { id: flagId },
+    include: { phase: { select: { id: true, hireId: true, hire: { select: { clientId: true } } } } },
+  });
+  if (!flag) return { ok: false, error: "Flag not found." };
+  if (flag.status !== "OPEN") return { ok: false, error: "This flag was already handled." };
+  if (!(await bridgeEscrowSupportsRefund())) {
+    return { ok: false, error: "The deployed escrow contract can't re-fund a refunded phase yet (needs PhaseEscrow v3). Record a review note instead." };
+  }
+  const onchain = await chain.readEscrow(flag.phaseId);
+  if (onchain.status !== "FUNDED" && onchain.status !== "DELIVERED") {
+    return { ok: false, error: `Nothing to refund: the escrow is ${onchain.status.toLowerCase()}.` };
+  }
+
+  // What came in, valued for the record: cwINR is ₹1; another asset at this phase's latest quote.
+  const isToken = onchain.asset.toLowerCase() === TOKEN_ADDRESS.toLowerCase();
+  const assetAddress = onchain.asset.toLowerCase() === ZERO ? null : onchain.asset;
+  const meta = assetAddress === null ? escrowAssets().find((a) => a.address === null) : escrowAssets().find((a) => a.address?.toLowerCase() === onchain.asset.toLowerCase());
+  const quote = isToken
+    ? null
+    : await platformDb.paymentQuote.findFirst({ where: { phaseId: flag.phaseId, assetAddress }, orderBy: { createdAt: "desc" }, select: { rate: true } });
+  const decimals = meta?.decimals ?? 18;
+  const units = Number(onchain.amountRaw) / 10 ** decimals;
+  const amountInr = isToken ? units : quote ? units * Number(quote.rate) : 0;
+
+  const res = await runPayment(
+    {
+      kind: "REFUND",
+      operation: FLAGGED_REFUND,
+      signer: "RELAYER",
+      amountInr: Math.round(amountInr * 100) / 100,
+      payerUserId: flag.phase.hire.clientId,
+      payeeUserId: flag.phase.hire.clientId,
+      fromAddress: escrowAddressLabel(),
+      toAddress: onchain.client,
+      phaseId: flag.phaseId,
+      hireId: flag.phase.hireId,
+      asset: isToken
+        ? null
+        : { symbol: meta?.symbol ?? "token", address: assetAddress, chainId: CHAIN_ID, amount: onchain.amountRaw.toString(), rate: quote ? Number(quote.rate) : null },
+    },
+    () => chain.refundToClient(flag.phaseId),
+  );
+  if (!res.ok) return { ok: false, error: res.reason, receiptNo: res.receiptNo };
+
+  const formatted = formatAsset(onchain.amountRaw, decimals);
+  const shown = `${formatted === "0" && onchain.amountRaw > BigInt(0) ? "less than 0.000001" : formatted} ${meta?.symbol ?? "units"}`;
+  await platformDb.flaggedEscrow.updateMany({
+    where: { id: flagId, status: "OPEN" },
+    data: { status: "REVIEWED", note: `Refunded ${shown} to ${short(onchain.client)} · receipt ${res.receiptNo ?? "—"}`, reviewedBy: reviewer, reviewedAt: new Date() },
+  });
+  return { ok: true, receiptNo: res.receiptNo, message: `Refunded ${shown} to ${short(onchain.client)}.` };
 }

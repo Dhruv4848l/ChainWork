@@ -91,8 +91,11 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
 - **[PARTLY FIXED 2026-10-06] Flagged escrows.** Every refused funding is now recorded
   (`FlaggedEscrow`, one row per phase, re-seen each tick) and listed on ADM-10 "Flagged wallet
   payments" with what's in escrow, who paid and why it was refused; an admin closes it with a
-  note (audit-logged). **Still open:** a refund-to-payer action — on the current contract a
-  refunded escrow slot can never be funded again, so a safe refund needs a contract change.
+  note (audit-logged). A new flag emails `OPS_ALERT_EMAIL` and badges the console sidebar.
+  **Refund to payer (2026-10-06):** PhaseEscrow v3 lets a refunded slot be funded again, so an
+  admin can return a refused funding to whoever sent it and the phase stays payable; the refund
+  posts no ledger lines (it was never credited) and is integration-tested end to end. Live once
+  v3 is deployed to Amoy — until then the console offers only the review note.
 
 ## Summary
 One real finding fixed (login rate limiting); the standing access-control, session, injection, and

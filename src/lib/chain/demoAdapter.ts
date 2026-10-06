@@ -212,9 +212,10 @@ export const demoAdapter: ChainAdapter = {
       const existing = await tx.demoEscrow.findUnique({ where: { key } });
       assertEscrowOp("fundPhase", (existing?.status as EscrowStatus | undefined) ?? "NONE");
       await debit(tx, client, paise);
-      await tx.demoEscrow.create({
-        data: { key, kind: "PHASE", refId: phaseId, client: norm(client), worker: norm(worker), amount: rupees(paise), status: "FUNDED" },
-      });
+      const funded = { client: norm(client), worker: norm(worker), amount: rupees(paise), status: "FUNDED" as const };
+      // v3 mirror: a REFUNDED row is funded again in place, starting clean.
+      if (existing) await tx.demoEscrow.update({ where: { key }, data: { ...funded, releaseEligibleAfter: null } });
+      else await tx.demoEscrow.create({ data: { key, kind: "PHASE", refId: phaseId, ...funded } });
     });
     return demoTxHash();
   },
@@ -242,6 +243,9 @@ export const demoAdapter: ChainAdapter = {
 
   refundToClient: (phaseId) =>
     transition(phaseId, "refundToClient", (tx, e) => credit(tx, e.client, e.paise)),
+
+  // Demo mode follows escrowRules.ts, which mirrors PhaseEscrow v3.
+  contractVersion: async () => 3,
 
   async readEscrow(phaseId): Promise<EscrowView> {
     await adoptLegacyPhase(phaseId);

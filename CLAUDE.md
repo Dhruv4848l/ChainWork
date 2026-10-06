@@ -648,7 +648,12 @@ Three gaps between the built product and the story we demo were closed here.
   caps the fee (the RPC over-suggests tips). **Live on Amoy:** PhaseEscrow v2 `0xe101…79c1`.
 - **Flagged wallet payments:** the reconciler never adopts a short / wrong-worker / wrong-asset
   funding; it upserts a `FlaggedEscrow` row, which ADM-10 lists (via the bridge) for an admin to
-  review with a note. No refund button: a refunded escrow slot can't be re-funded on v2.
+  review with a note, or — on **PhaseEscrow v3** — **refund it to the payer**
+  (`bridgeRefundFlag`: a REFUND payment with operation `flaggedRefund` → receipt, NO ledger lines,
+  no phase change; the phase can then be paid correctly). v3 = `_record` accepts a REFUNDED slot
+  (resets timer + settlement) and `version()` returns 3; `escrowRules.ts` + `demoAdapter` mirror
+  it; `chain.contractVersion()` gates the button (v1/v2 report 2). The reconciler treats
+  "slot REFUNDED, phase still PENDING_FUNDING" as nothing to repair.
   A NEW flag emails `OPS_ALERT_EMAIL` once (`src/lib/ops/alerts.ts`, fail-safe) and the console
   sidebar shows the open count on "Pending Payments" (`bridgeOpenFlagCount`).
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").

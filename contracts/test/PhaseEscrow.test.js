@@ -256,6 +256,44 @@ describe("PhaseEscrow", () => {
       await fund(escrow, client, worker);
       await expect(escrow.connect(worker).refundToClient(PHASE)).to.be.revertedWithCustomError(escrow, "AccessControlUnauthorizedAccount");
     });
+    it("v3: a refunded phase can be funded again, starting clean", async () => {
+      const { token, escrow, admin, client, worker, other } = await loadFixture(deploy);
+      expect(await escrow.version()).to.equal(3n);
+      // A funding to the wrong worker, refunded…
+      await escrow.connect(client).fundPhase(PHASE, other.address, AMOUNT);
+      await escrow.connect(admin).refundToClient(PHASE);
+      expect((await escrow.getEscrow(PHASE)).status).to.equal(Status.REFUNDED);
+      // …then funded correctly; the escrow holds exactly the new funding, nothing stale.
+      await expect(escrow.connect(client).fundPhase(PHASE, worker.address, AMOUNT)).to.emit(escrow, "PhaseFunded");
+      const e = await escrow.getEscrow(PHASE);
+      expect(e.status).to.equal(Status.FUNDED);
+      expect(e.worker).to.equal(worker.address);
+      expect(e.amount).to.equal(AMOUNT);
+      expect(e.releaseEligibleAfter).to.equal(0n);
+      expect(await token.balanceOf(await escrow.getAddress())).to.equal(AMOUNT);
+      // It still can't be funded twice while live.
+      await expect(escrow.connect(client).fundPhase(PHASE, worker.address, AMOUNT)).to.be.revertedWithCustomError(escrow, "WrongStatus");
+    });
+
+    it("v3: a re-funding starts with no settlement proposal and no delivery deadline", async () => {
+      const { escrow, admin, client, worker } = await loadFixture(deploy);
+      await fund(escrow, client, worker);
+      await escrow.connect(admin).markDelivered(PHASE, (await time.latest()) + WINDOW);
+      await escrow.connect(client).proposeSettlement(PHASE, 7000);
+      await escrow.connect(admin).refundToClient(PHASE);
+      await fund(escrow, client, worker);
+      expect((await escrow.getEscrow(PHASE)).releaseEligibleAfter).to.equal(0n);
+      // The old 70% proposal is gone: the worker can't accept it.
+      await expect(escrow.connect(worker).acceptSettlement(PHASE)).to.be.reverted;
+    });
+
+    it("released, resolved and disputed phases still can't be funded again", async () => {
+      const { escrow, admin, client, worker } = await loadFixture(deploy);
+      await fund(escrow, client, worker);
+      await escrow.connect(admin).markDelivered(PHASE, (await time.latest()) + WINDOW);
+      await escrow.connect(client).approveRelease(PHASE);
+      await expect(fund(escrow, client, worker)).to.be.revertedWithCustomError(escrow, "WrongStatus");
+    });
   });
 
   describe("delivery stake", () => {

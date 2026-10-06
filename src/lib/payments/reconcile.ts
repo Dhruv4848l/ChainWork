@@ -109,6 +109,9 @@ async function reconcilePayment(p: PaymentTransaction, now: Date): Promise<boole
 /** What the chain status implies for a DB phase that has fallen behind. */
 function repairFor(dbStatus: PhaseStatus, onchain: EscrowStatus): { kind: "FUND" | "RELEASE" | "REFUND" | "SPLIT"; operation: string } | null {
   if (onchain === "RELEASED" && dbStatus !== "RELEASED") return { kind: "RELEASE", operation: "reconciled:release" };
+  // A slot refunded while the DB phase still awaits funding was a refused (flagged) funding
+  // returned to its payer: the phase never had money, so there is nothing to repair.
+  if (onchain === "REFUNDED" && dbStatus === "PENDING_FUNDING") return null;
   if (onchain === "REFUNDED" && dbStatus !== "AUTO_CANCELLED") return { kind: "REFUND", operation: "reconciled:refund" };
   if (onchain === "RESOLVED" && dbStatus !== "RESOLVED") return { kind: "SPLIT", operation: "reconciled:resolve" };
   if ((onchain === "FUNDED" || onchain === "DELIVERED") && dbStatus === "PENDING_FUNDING") return { kind: "FUND", operation: "reconciled:fund" };

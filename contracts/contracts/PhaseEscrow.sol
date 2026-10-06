@@ -191,12 +191,22 @@ contract PhaseEscrow is AccessControl, ReentrancyGuard, Pausable {
         if (amount == 0) revert InvalidAmount();
         if (worker == address(0)) revert ZeroAddress();
         Escrow storage e = _escrows[phaseId];
-        if (e.status != Status.NONE) revert WrongStatus(); // no double-funding
+        // No double-funding. v3: a REFUNDED slot may be funded again — it holds nothing — so a
+        // refused or rolled-back funding never closes the phase for good.
+        if (e.status != Status.NONE && e.status != Status.REFUNDED) revert WrongStatus();
         e.client = msg.sender;
         e.worker = worker;
         e.amount = amount;
         e.status = Status.FUNDED;
         e.asset = asset;
+        e.releaseEligibleAfter = 0;
+        delete _settlements[phaseId];
+    }
+
+    /// Contract generation the app checks before offering features: 3 = a refunded phase
+    /// can be funded again (v1/v2 have no version(); the call reverts).
+    function version() external pure returns (uint256) {
+        return 3;
     }
 
     /// Pay `amount` of `asset` out of escrow. Native transfers forward all gas, so this is

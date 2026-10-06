@@ -97,12 +97,16 @@ const ESCROW_KINDS: Partial<Record<PaymentKind, EscrowTxType>> = {
   STAKE_FORFEIT: "STAKE_FORFEIT",
 };
 
+/** Returning a refused wallet funding to its payer (ADM-10): not part of the phase's books. */
+export const FLAGGED_REFUND = "flaggedRefund";
+
 /** Which phase event a confirmed payment implies. */
 function phaseEventFor(p: Pick<PaymentTransaction, "kind" | "operation">): PhaseEvent | null {
   switch (p.kind) {
     case "FUND": return "fund";
     case "RELEASE": return p.operation === "autoRelease" ? "autoRelease" : "approve";
-    case "REFUND": return "refund";
+    // A refused (flagged) funding was never credited to the phase: refunding it changes nothing there.
+    case "REFUND": return p.operation === FLAGGED_REFUND ? null : "refund";
     case "SPLIT": return "resolve";
     default: return null;
   }
@@ -129,6 +133,8 @@ export function ledgerRows(p: PaymentTransaction): Prisma.LedgerEntryCreateManyI
         ...row(p.payeeUserId, "WALLET", "CREDIT", amt, p.operation === "autoRelease" ? "Payment auto-released" : "Payment released"),
       ];
     case "REFUND":
+      // A refused funding was never credited to anyone's books, so returning it posts nothing.
+      if (p.operation === FLAGGED_REFUND) return [];
       return [
         ...row(p.payerUserId, "ESCROW", "DEBIT", amt, "Escrow refunded"),
         ...row(p.payeeUserId, "WALLET", "CREDIT", amt, "Refund from escrow"),

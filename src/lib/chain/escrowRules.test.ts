@@ -28,9 +28,17 @@ test("no double funding, no double release, nothing moves once final", () => {
   assert.throws(() => assertEscrowOp("approveRelease", "RELEASED"), EscrowRuleError);
   for (const final of ["RELEASED", "RESOLVED", "REFUNDED"] as const) {
     for (const op of Object.keys(ESCROW_ALLOWED_FROM) as (keyof typeof ESCROW_ALLOWED_FROM)[]) {
+      // v3: an empty, refunded slot may be funded again — nothing else moves once final.
+      if (final === "REFUNDED" && op === "fundPhase") continue;
       assert.throws(() => assertEscrowOp(op, final), EscrowRuleError, `${op} from ${final}`);
     }
   }
+});
+
+test("v3: a refunded phase can be funded again; released and resolved ones can't", () => {
+  assert.equal(assertEscrowOp("fundPhase", "REFUNDED"), "FUNDED");
+  assert.throws(() => assertEscrowOp("fundPhase", "RELEASED"), EscrowRuleError);
+  assert.throws(() => assertEscrowOp("fundPhase", "RESOLVED"), EscrowRuleError);
 });
 
 test("a disputed phase is frozen until the verdict", () => {

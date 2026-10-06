@@ -2,14 +2,14 @@ import { Card } from "@/components/ui";
 import { EmptyState } from "@/features/shared/dashboard-ui";
 import { FlagReviewForm } from "@/features/admin/FlagReviewForm";
 import { requireAdminAccess } from "@/lib/admin/guards";
-import { bridgeFlaggedEscrows, bridgeReleasedPhases } from "@/lib/admin/bridge";
+import { bridgeEscrowSupportsRefund, bridgeFlaggedEscrows, bridgeReleasedPhases } from "@/lib/admin/bridge";
 import { explorerTxBase } from "@/lib/chain/config";
 import { formatDate, formatInr, shortHash } from "@/lib/format";
 
 /* ADM-10 Payments — flagged wallet payments to review, then released phases + their on-chain payout tx. */
 export default async function PendingPaymentsPage() {
   await requireAdminAccess("payments");
-  const [rows, flags] = await Promise.all([bridgeReleasedPhases(), bridgeFlaggedEscrows()]);
+  const [rows, flags, canRefund] = await Promise.all([bridgeReleasedPhases(), bridgeFlaggedEscrows(), bridgeEscrowSupportsRefund()]);
   const explorer = explorerTxBase();
   const open = flags.filter((f) => f.status === "OPEN");
   const reviewed = flags.filter((f) => f.status === "REVIEWED").slice(0, 10);
@@ -28,7 +28,7 @@ export default async function PendingPaymentsPage() {
         </div>
         <p className="mb-3 max-w-3xl text-[12.5px] leading-relaxed text-ink3">
           Money a payer sent into escrow from their own wallet that did not match what was agreed — wrong worker, short of the price, or another currency.
-          It was <span className="text-ink2">not</span> credited to the phase and stays locked in escrow. Reach the payer, settle it, then record what was done.
+          It was <span className="text-ink2">not</span> credited to the phase and stays locked in escrow. Refund it to the payer, or settle it with them and record what was done.
         </p>
         {open.length === 0 ? (
           <Card className="p-5 text-[13px] text-ink3">Nothing to review. The reconciler adds a flag here whenever it refuses an on-chain funding.</Card>
@@ -49,7 +49,7 @@ export default async function PendingPaymentsPage() {
                   <div className="font-mono text-[11.5px] text-ink3">paid by {f.paidBy} · names worker {f.paidTo}</div>
                   <div className="text-[11.5px] text-ink3">First seen {formatDate(f.detectedAt)} · last checked {formatDate(f.lastSeenAt)}</div>
                 </div>
-                <FlagReviewForm flagId={f.id} />
+                <FlagReviewForm flagId={f.id} canRefund={canRefund} amount={f.amount} payer={f.paidBy} />
               </Card>
             ))}
           </div>

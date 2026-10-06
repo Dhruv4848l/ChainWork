@@ -38,6 +38,8 @@ export interface ChainAdapter {
   resolveDispute(phaseId: string, workerBps: number): Promise<TxHash>;
   refundToClient(phaseId: string): Promise<TxHash>;
   readEscrow(phaseId: string): Promise<EscrowView>;
+  /** PhaseEscrow generation: 3 = a refunded phase can be funded again (v1/v2 report 2). */
+  contractVersion(): Promise<number>;
 
   // ---- delivery stake (per hire) ----
   lockStake(hireId: string, workerUserId: string, clientUserId: string, amountInr: number): Promise<TxHash>;

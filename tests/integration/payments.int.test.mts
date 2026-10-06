@@ -26,7 +26,7 @@ import { createQuote, type QuoteView } from "@/lib/payments/quotes";
 import { reconcile } from "@/lib/payments/reconcile";
 import { recordVerifiedPayment, runPayment, type PaymentOutcome, type PaymentSpec } from "@/lib/payments/service";
 import { completeWalletLink, startWalletLink } from "@/lib/wallet/link";
-import { bridgeFlaggedEscrows, bridgeReviewFlag } from "@/lib/admin/bridge";
+import { bridgeEscrowSupportsRefund, bridgeFlaggedEscrows, bridgeRefundFlag, bridgeReviewFlag } from "@/lib/admin/bridge";
 import { makeSignedHire, makeUser, type TestUser } from "../fixtures";
 
 const RPC = process.env.CHAIN_RPC_URL ?? "http://127.0.0.1:8545";
@@ -263,6 +263,52 @@ describe("security regressions — a forged or tampered payment never counts", (
     const p = await db.paymentTransaction.findUniqueOrThrow({ where: { id: r.paymentId } });
     assert.equal(p.status, "FAILED");
     assert.equal(await phaseStatus(phaseId), "PENDING_FUNDING");
+  });
+});
+
+describe("flagged payments: refund to payer (PhaseEscrow v3)", () => {
+  it("returns a refused funding to whoever paid it, books nothing, and the phase can then be paid correctly", async (t) => {
+    if (skip) return t.skip(skip);
+    assert.equal(await bridgeEscrowSupportsRefund(), true, "the local escrow is v3");
+    const { phaseId, hireId, q } = await quoted("USDT");
+    const usdt = async () => pub.readContract({ address: USDT_ADDRESS as `0x${string}`, abi: erc20Abi, functionName: "balanceOf", args: [PAYER] });
+
+    // A wallet payment naming the wrong worker: refused, then flagged by the reconciler.
+    const hash = await send({ address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhaseWith", args: [keyFor(phaseId), PAYER, USDT_ADDRESS, BigInt(q.assetAmount)] });
+    refused(await recordVerifiedPayment(walletSpec(phaseId, hireId, q), hash, check(phaseId, q, hash)));
+    const flag = await notAdopted(phaseId);
+
+    // Refund it from the admin desk.
+    const before = await usdt();
+    const r = await bridgeRefundFlag(flag.id, "Test Admin (ROOT)");
+    assert.ok(r.ok, r.ok ? "" : r.error);
+    assert.equal((await usdt()) - before, BigInt(q.assetAmount), "the payer got exactly their USDT back");
+    assert.match(r.receiptNo ?? "", /^CW-RCPT-/);
+    const closed = await db.flaggedEscrow.findUniqueOrThrow({ where: { id: flag.id } });
+    assert.equal(closed.status, "REVIEWED");
+    assert.match(closed.note ?? "", /^Refunded .* USDT to 0xdD2F…44C0 · receipt CW-RCPT-/);
+
+    // Recorded as a refund with a receipt, but no ledger lines (it was never credited) and
+    // no change to the phase — not even after the reconciler sees the refunded slot.
+    const pay = await db.paymentTransaction.findFirstOrThrow({ where: { phaseId, kind: "REFUND" }, include: { ledger: true } });
+    assert.equal(pay.status, "CONFIRMED");
+    assert.equal(pay.operation, "flaggedRefund");
+    assert.equal(pay.assetSymbol, "USDT");
+    assert.equal(pay.ledger.length, 0);
+    await reconcile();
+    assert.equal(await phaseStatus(phaseId), "PENDING_FUNDING");
+
+    // The same phase is now paid correctly and confirms (v3 re-opens a refunded slot).
+    const q2 = await createQuote(phaseId, client.id, "USDT");
+    if (!q2.ok) throw new Error(q2.error);
+    const good = await send({ address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhaseWith", args: [keyFor(phaseId), q2.quote.workerAddress, USDT_ADDRESS, BigInt(q2.quote.assetAmount)] });
+    const ok = await recordVerifiedPayment(walletSpec(phaseId, hireId, q2.quote), good, check(phaseId, q2.quote, good));
+    assert.ok(ok.ok, ok.ok ? "" : ok.reason);
+    assert.equal(await phaseStatus(phaseId), "FUNDED");
+
+    // A handled flag can't be refunded twice.
+    const again = await bridgeRefundFlag(flag.id, "Test Admin (ROOT)");
+    assert.equal(again.ok, false);
   });
 });
 

@@ -145,6 +145,14 @@ export const viemAdapter: ChainAdapter = {
   resolveDispute: (phaseId, workerBps) => relayerCall("resolveDispute", [keyFor(phaseId), BigInt(workerBps)]),
   refundToClient: (phaseId) => relayerCall("refundToClient", [keyFor(phaseId)]),
 
+  async contractVersion(): Promise<number> {
+    try {
+      return Number(await publicClient.readContract({ address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "version" }));
+    } catch {
+      return 2; // v1/v2 have no version(): the call reverts
+    }
+  },
+
   async readEscrow(phaseId): Promise<EscrowView> {
     const r = (await publicClient.readContract({
       address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "getEscrow", args: [keyFor(phaseId)],

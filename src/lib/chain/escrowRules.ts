@@ -21,7 +21,8 @@ export type EscrowOp =
 
 /** Which statuses each escrow operation may start from (anything else reverts WrongStatus). */
 export const ESCROW_ALLOWED_FROM: Record<EscrowOp, readonly EscrowStatus[]> = {
-  fundPhase: ["NONE"],
+  // PhaseEscrow v3: a REFUNDED slot holds nothing and may be funded again.
+  fundPhase: ["NONE", "REFUNDED"],
   markDelivered: ["FUNDED"],
   approveRelease: ["FUNDED", "DELIVERED"],
   autoRelease: ["DELIVERED"],

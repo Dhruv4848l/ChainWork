@@ -225,3 +225,13 @@ export async function reviewFlagAction(flagId: string, note: string): Promise<Ad
   revalidatePath("/admin/payments");
   return { ok: true, message: "Marked reviewed." };
 }
+
+export async function refundFlagAction(flagId: string): Promise<AdminActionState> {
+  const admin = await requireAdminAccess("payments");
+  const r = await bridge.bridgeRefundFlag(flagId, `${admin.name} (${admin.role})`);
+  if (!r.ok) return { error: r.error };
+  await writeAudit({ actorAdminId: admin.id, action: "FLAG_REFUNDED", targetType: "FlaggedEscrow", targetId: flagId, after: { receiptNo: r.receiptNo } });
+  revalidatePath("/admin/payments");
+  return { ok: true, message: `${r.message} Receipt ${r.receiptNo ?? "—"}.` };
+}
+

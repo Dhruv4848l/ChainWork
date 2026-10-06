@@ -30,6 +30,7 @@ export const raiseDispute: ChainAdapter["raiseDispute"] = (...a) => adapter().ra
 export const resolveDispute: ChainAdapter["resolveDispute"] = (...a) => adapter().resolveDispute(...a);
 export const refundToClient: ChainAdapter["refundToClient"] = (...a) => adapter().refundToClient(...a);
 export const readEscrow: ChainAdapter["readEscrow"] = (...a) => adapter().readEscrow(...a);
+export const contractVersion: ChainAdapter["contractVersion"] = () => adapter().contractVersion();
 export const lockStake: ChainAdapter["lockStake"] = (...a) => adapter().lockStake(...a);
 export const refundStake: ChainAdapter["refundStake"] = (...a) => adapter().refundStake(...a);
 export const forfeitStake: ChainAdapter["forfeitStake"] = (...a) => adapter().forfeitStake(...a);

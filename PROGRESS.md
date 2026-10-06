@@ -566,8 +566,12 @@ accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
    `flagged_escrow` — apply to Neon with `npm run db:deploy` before deploying), ADM-10
    "Flagged wallet payments" with review notes (audit-logged), clear reasons ("paid 15.27 USDT,
    short of the 15.58 USDT quoted"). Alert done too: a new flag emails `OPS_ALERT_EMAIL` once
-   and the console sidebar badges "Pending Payments" with the open count. Left: a refund
-   action (needs a contract change — a refunded escrow slot can't be funded again). Also done: CL-08 "Fund ₹X" opens the
+   and the console sidebar badges "Pending Payments" with the open count. **Refund to
+   payer done too (code + tests):** PhaseEscrow **v3** (a refunded slot can be funded again;
+   `version()` = 3) — 45 contract tests, integration test "returns a refused funding to whoever
+   paid it…". **Not yet on Amoy** (the live escrow is v2, so the console shows only the review
+   note): deploying v3 needs ~0.07–0.1 test POL on the deployer (it has 0.075) and moves
+   `CHAIN_ESCROW_ADDRESS` again. Also done: CL-08 "Fund ₹X" opens the
    payment window; `/api/health/chain` adds `testnetReady` / `testnetTodo`, and marks chain
    checks `required: false` in demo mode.
 3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the
