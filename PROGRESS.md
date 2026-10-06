@@ -565,8 +565,9 @@ accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
 2. ~~Admin tooling for flagged escrows~~ **done 2026-10-06:** `FlaggedEscrow` (migration
    `flagged_escrow` — apply to Neon with `npm run db:deploy` before deploying), ADM-10
    "Flagged wallet payments" with review notes (audit-logged), clear reasons ("paid 15.27 USDT,
-   short of the 15.58 USDT quoted"). Left: an alert, and a refund action (needs a contract
-   change — a refunded escrow slot can't be funded again). Also done: CL-08 "Fund ₹X" opens the
+   short of the 15.58 USDT quoted"). Alert done too: a new flag emails `OPS_ALERT_EMAIL` once
+   and the console sidebar badges "Pending Payments" with the open count. Left: a refund
+   action (needs a contract change — a refunded escrow slot can't be funded again). Also done: CL-08 "Fund ₹X" opens the
    payment window; `/api/health/chain` adds `testnetReady` / `testnetTodo`, and marks chain
    checks `required: false` in demo mode.
 3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the

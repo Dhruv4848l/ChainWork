@@ -15,11 +15,14 @@ export function AdminChrome({
   name,
   roleLabel,
   nav,
+  badges = {},
   children,
 }: {
   name: string;
   roleLabel: string;
   nav: NavItem[];
+  /** Count of items waiting on an admin, per nav key (e.g. open flagged payments). */
+  badges?: Partial<Record<string, number>>;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -57,9 +60,14 @@ export function AdminChrome({
                   <Link
                     key={item.key}
                     href={item.href}
-                    className={`block rounded-[9px] px-3 py-2 text-[13px] transition-colors ${active ? "bg-bronze/12 font-semibold text-bronze" : "text-ink2 hover:bg-bronze/[0.08]"}`}
+                    className={`flex items-center justify-between gap-2 rounded-[9px] px-3 py-2 text-[13px] transition-colors ${active ? "bg-bronze/12 font-semibold text-bronze" : "text-ink2 hover:bg-bronze/[0.08]"}`}
                   >
-                    {item.label}
+                    <span>{item.label}</span>
+                    {(badges[item.key] ?? 0) > 0 && (
+                      <span className="rounded-full bg-ember/15 px-2 py-0.5 text-[10.5px] font-semibold text-ember" aria-label={`${badges[item.key]} waiting`}>
+                        {badges[item.key]}
+                      </span>
+                    )}
                   </Link>
                 );
               })}

@@ -110,6 +110,16 @@ async function notAdopted(phaseId: string) {
   return flags[0];
 }
 
+/** Ops alerts mirrored to the dev outbox since `iso` (mock email provider). */
+function opsAlertsSince(iso: string): number {
+  try {
+    const all = JSON.parse(fs.readFileSync(path.join(process.cwd(), ".dev-outbox.json"), "utf8")) as { at: string; to: string; subject?: string }[];
+    return all.filter((m) => m.at >= iso && m.to === "ops-alerts@example.com" && /Flagged wallet payment/.test(m.subject ?? "")).length;
+  } catch {
+    return 0;
+  }
+}
+
 const phaseStatus = async (id: string) => (await db.phase.findUniqueOrThrow({ where: { id } })).status;
 
 describe("payments from the payer's own wallet", () => {
@@ -165,6 +175,8 @@ describe("security regressions — a forged or tampered payment never counts", (
 
   it("refuses a funding that names a different worker address (payout redirection), and the reconciler won't adopt it", async (t) => {
     if (skip) return t.skip(skip);
+    process.env.OPS_ALERT_EMAIL = "ops-alerts@example.com"; // the ops alert goes to the dev outbox (mock email)
+    const since = new Date().toISOString();
     const { phaseId, hireId, q } = await quoted("USDT");
     const hash = await send({ address: ESCROW_ADDRESS, abi: phaseEscrowAbi, functionName: "fundPhaseWith", args: [keyFor(phaseId), PAYER, USDT_ADDRESS, BigInt(q.assetAmount)] });
     const r = refused(await recordVerifiedPayment(walletSpec(phaseId, hireId, q), hash, check(phaseId, q, hash)));
@@ -172,6 +184,7 @@ describe("security regressions — a forged or tampered payment never counts", (
     assert.match(r.receiptNo ?? "", /^CW-FAIL-/, "a failed attempt still gets a receipt");
     const flag = await notAdopted(phaseId);
     assert.match(flag.reason, /unexpected worker/);
+    assert.equal(opsAlertsSince(since), 1, "a new flag emails the ops address once");
     assert.equal(flag.onchainWorker.toLowerCase(), PAYER.toLowerCase());
 
     // The admin desk shows it, and a review closes it for good: the next tick re-sees the
@@ -185,6 +198,8 @@ describe("security regressions — a forged or tampered payment never counts", (
     assert.equal(after.length, 1);
     assert.equal(after[0].status, "REVIEWED");
     assert.ok(after[0].lastSeenAt >= flag.lastSeenAt, "re-seen by the reconciler");
+    assert.equal(opsAlertsSince(since), 1, "re-seeing a known flag sends no new alert");
+    delete process.env.OPS_ALERT_EMAIL;
   });
 
   it("refuses an underpayment beyond the 1% tolerance", async (t) => {

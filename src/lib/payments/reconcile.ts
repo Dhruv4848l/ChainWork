@@ -12,6 +12,7 @@ import { toTokenUnits } from "@/lib/chain/viemAdapter";
 import type { EscrowView } from "@/lib/chain/types";
 import { formatAsset, meetsQuote } from "./quoteMath";
 import { escrowAssets } from "./escrowAssets";
+import { alertNewFlaggedPayment } from "@/lib/ops/alerts";
 import type { PaymentAsset } from "./service";
 
 /*
@@ -200,6 +201,7 @@ async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
       if (adoption && !adoption.ok) {
         // A tampered / short wallet payment sits in escrow. Never adopt it — flag it for an
         // admin (ADM-10 "Flagged wallet payments"). Re-seen every tick; a review closes it.
+        const isNew = !(await platformDb.flaggedEscrow.findUnique({ where: { phaseId: phase.id }, select: { id: true } }));
         await platformDb.flaggedEscrow.upsert({
           where: { phaseId: phase.id },
           create: {
@@ -208,6 +210,7 @@ async function repairPhaseDrift(now: Date, errors: string[]): Promise<number> {
           },
           update: { reason: adoption.reason, onchainClient: onchain.client, onchainWorker: onchain.worker, asset: onchain.asset, amountRaw: onchain.amountRaw.toString(), lastSeenAt: now },
         });
+        if (isNew) await alertNewFlaggedPayment({ phaseName: phase.name, reason: adoption.reason, amount: describeAmount(onchain.amountRaw, onchain.asset) });
         errors.push(`drift ${phase.id}: ${adoption.reason} — not adopted`);
       } else if (fix) {
         // A SPLIT's worker share can't be recovered from the escrow's final state, so a

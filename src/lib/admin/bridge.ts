@@ -321,3 +321,8 @@ export async function bridgeReviewFlag(id: string, note: string, reviewer: strin
   });
   return r.count === 1;
 }
+
+/** Open flagged wallet payments — the ADM-10 badge in the console sidebar. */
+export async function bridgeOpenFlagCount(): Promise<number> {
+  return platformDb.flaggedEscrow.count({ where: { status: "OPEN" } });
+}

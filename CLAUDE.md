@@ -649,6 +649,8 @@ Three gaps between the built product and the story we demo were closed here.
 - **Flagged wallet payments:** the reconciler never adopts a short / wrong-worker / wrong-asset
   funding; it upserts a `FlaggedEscrow` row, which ADM-10 lists (via the bridge) for an admin to
   review with a note. No refund button: a refunded escrow slot can't be re-funded on v2.
+  A NEW flag emails `OPS_ALERT_EMAIL` once (`src/lib/ops/alerts.ts`, fail-safe) and the console
+  sidebar shows the open count on "Pending Payments" (`bridgeOpenFlagCount`).
 - Plan + status: `docs/PAYMENT_SYSTEM_PLAN.md`, `PROGRESS.md` (see "Resume here").
 
 ## Reference files (not in this repo — on the developer's machine)
