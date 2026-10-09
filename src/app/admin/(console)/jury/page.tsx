@@ -27,7 +27,11 @@ export default async function JuryRosterPage() {
           </div>
           {jurors.map((j) => (
             <Link key={j.id} href={`/admin/jury/${j.id}`} className="grid grid-cols-[1.6fr_0.8fr_1fr_0.8fr_0.9fr] items-center gap-3 border-b border-hair px-6 py-3.5 last:border-b-0 hover:bg-bronze/[0.04]">
-              <span className="text-[13px] font-medium text-ink">{j.displayName}</span>
+              <span className="text-[13px] font-medium text-ink">
+                {j.displayName}
+                {/* Without a linked console login a juror can't vote, so the draw skips them. */}
+                {!j.adminUserId && <span className="ml-2 text-[11px] font-normal text-amber">no console login · not drawn</span>}
+              </span>
               <span className="text-[12px] text-ink2">{j.casesCount}</span>
               <span className="text-[12px] text-emerald">{j.agreementRate.toFixed(0)}%</span>
               <span className="text-[12px] text-ink2">{formatInr(Number(j.stakeBalance))}</span>

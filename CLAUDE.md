@@ -384,6 +384,34 @@ vars at Amoy + a real relayer key.
   or add a `node:test`. NOTE: the on-chain freeze/settle paths themselves were proven in Phases 7/10;
   the verify route used a synthetic phase id so its `frozen` was false by design.
 
+- **Jury integrity (F2/F3, 2026-10-09) — supersedes parts of the above.**
+  - **A juror votes only as themselves.** `JurorProfile.adminUserId` (migration
+    `juror_admin_link`) links a juror to their OWN JURY console login; `commitVoteAction` /
+    `revealVoteAction` resolve the juror from the session (`currentJuror()`) and never take a
+    juror id from the browser (`juryActions.test.ts` enforces it). Root has no ballot. A JURY
+    login sees only cases it's seated on (others 404) and fellow jurors only as "Juror n".
+    Seeds give every juror a login `juror.<platform-email-local-part>@chainwork.local` /
+    `admin123` (dev TOTP); in production enrol them with `rotate-admin-credentials.mts`.
+    Jurors without a login are never drawn (roster shows "no console login").
+  - **Case state machine:** `DISPUTE_TRANSITIONS` + `disputeBlocker` in `voting.ts` (pure,
+    `disputeMachine.test.ts`). Commit only in COMMIT before `commitDeadline`; reveal only in
+    REVEAL before `revealDeadline`; finalize only from REVEAL, once, and only when everyone
+    revealed or the deadline passed; appeal only from VERDICT, never of an appeal; settle only
+    from VERDICT (`claimSettlement` claims VERDICT→EXECUTED before moving money,
+    `releaseSettlementClaim` on failure). Every change is a guarded `updateMany`.
+  - **Deadlines:** `runJuryTick()` runs in the cron route after the escrow tick — drops
+    non-committers + draws replacements; at the reveal deadline finalizes with quorum
+    (non-revealers slashed) or slashes non-revealers and redraws a fresh panel. Windows come
+    from ADM-17 `voting_commit_hours` / `voting_reveal_hours`; panel sizes from `jury_panel_*`
+    / `appeal_panel_size`. **Stale seeded demo cases get processed by it.**
+  - **Stakes** never go below 0 (`slashFor`); eligibility needs stake ≥ one slash (₹200).
+    `panelSize` = jurors actually seated. Removed jurors keep their assignment with
+    `removedAt` so they're never redrawn for that case.
+  - **Verifiable draw:** `drawPanel(eligible, size, seed)` (keccak-seeded Fisher–Yates); seed,
+    eligible list and result are in the audit log (DISPUTE_OPEN / JURY_APPEAL /
+    JURY_COMMIT_LAPSED / JURY_REDRAW) so a draw can be recomputed.
+  - Tests: `tests/integration/jury.int.test.mts` (local Postgres only, no chain).
+
 ## Communication & reputation layer (Phase 12)
 
 - **Notifications — `src/lib/notify/`.** `notify({userId,type,title,body?,linkUrl?,channels?})` is the

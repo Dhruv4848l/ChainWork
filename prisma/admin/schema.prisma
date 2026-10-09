@@ -93,6 +93,8 @@ model AdminUser {
 
   moderationActions ModerationAction[]
   auditLogs         AuditLog[]
+  // The juror this console login votes as (JURY role). Admin↔admin link, same DB.
+  jurorProfile      JurorProfile?
 }
 
 /// A vetted platform user who has opted into jury duty. Links to the Platform DB
@@ -100,6 +102,10 @@ model AdminUser {
 model JurorProfile {
   id             String      @id @default(cuid())
   platformUserId String      @unique // ID reference into Platform DB (no FK)
+  // The console login that votes as this juror. Commit / reveal derive the juror from
+  // the logged-in admin through this link — never from an id sent by the browser.
+  adminUserId    String?     @unique
+  adminUser      AdminUser?  @relation(fields: [adminUserId], references: [id])
   displayName    String // cached for the roster (real name shown at this level only)
   stakeBalance   Decimal     @default(0) @db.Decimal(12, 2)
   agreementRate  Float       @default(0) // % votes agreeing with the majority
@@ -176,6 +182,9 @@ model JuryAssignment {
   jurorId    String
   juror      JurorProfile @relation(fields: [jurorId], references: [id])
   assignedAt DateTime     @default(now())
+  // Set when the juror is dropped from the panel (missed the commit deadline, or the
+  // panel was redrawn). Kept so a removed juror is never drawn for the case again.
+  removedAt  DateTime?
 
   @@unique([caseId, jurorId])
 }

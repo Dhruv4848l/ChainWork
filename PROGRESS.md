@@ -11,17 +11,16 @@ switch to real test transactions.
 
 > **What's next:** [docs/ROADMAP.md → Future path](docs/ROADMAP.md#future-path). In order:
 > 1. Finish the switch to testnet.
-> 2. Close the jury's integrity gaps (F2/F3).
+> 2. The rest of Stage 2 (shared rate limits, demo-login check, chain-health card).
 > 3. Finish the half-built buttons.
 > 4. Build the features the pitch promises.
 >
 > Real money stays off until the [pre-mainnet checklist](docs/PRE_MAINNET_CHECKLIST.md) is
 > done, starting with a professional smart-contract audit.
 
-_Last updated: 2026-10-07 (production security fixes, PhaseEscrow v2 on Amoy, flagged-payments
-desk, PhaseEscrow v3)._
+_Last updated: 2026-10-09 (jury integrity fixes F2/F3, Gmail email provider)._
 
-**Test suite today:** 84 unit · 45 contract · 16 integration · 11 browser E2E locally, plus 9 E2E
+**Test suite today:** 102 unit · 45 contract · 26 integration · 11 browser E2E locally, plus 9 E2E
 against the live site. Production build passes.
 
 | # | Phase | Status | % |
@@ -648,4 +647,33 @@ from a faucet). The full ordered plan is in [ROADMAP.md → Future path](docs/RO
 4. **Switch to testnet.** Follow [RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md):
    close the demo-money escrows, set `PAYMENT_MODE=testnet`, smoke-test one payment and its
    receipt, then re-run `npm run test:e2e:remote`.
-5. **Then the jury integrity fixes** (F2/F3): the largest correctness gap left.
+5. ~~Jury integrity fixes (F2/F3)~~ — done 2026-10-09, see the last section. **Before deploying
+   them:** apply the admin migration `juror_admin_link` to Neon (`npm run db:deploy`) and give each
+   production juror a login (re-running `seed-demo-accounts.mjs` links them; then
+   `rotate-admin-credentials.mts` gives them real passwords + TOTP). Until then no production
+   juror can be drawn. The new jury timer will also process the stale demo cases whose deadlines
+   passed long ago.
+
+## Jury integrity — F2 / F3 (2026-10-09)
+
+The jury decides where frozen escrow goes, so these were correctness bugs in a money path.
+- **One juror, one vote.** Each juror has their own console login (`JurorProfile.adminUserId`,
+  admin migration `juror_admin_link`). Commit and reveal work out the juror from the session;
+  the browser can't name one. Root watches but has no ballot. A juror sees only their own cases
+  and sees fellow jurors as "Juror 2, 3…". The seeds create a login per juror
+  (`juror.<name>@chainwork.local` / `admin123`).
+- **The case can only move forward, once.** A transition table (`voting.ts`) plus guarded status
+  claims: double finalize, double settle and settling an appealed case are refused, even when
+  two requests race. Finalize waits for every reveal or the reveal deadline, so an early
+  majority can't shut out later votes. An appeal draws a real fresh 7-juror panel (it used to
+  open with nobody on it), and an appeal can't be appealed.
+- **Deadlines are enforced** by a jury timer in the cron tick: non-committers are replaced,
+  non-revealers slashed, and a round without quorum is redrawn. Stakes never go below 0.
+- **Checkable draws.** The panel is drawn from a random seed that's written to the audit log
+  with the eligible list, so anyone can recompute the draw.
+- **Verified:** 18 new unit tests (every allowed + forbidden transition, the static "no juror id
+  from the browser" check) and 10 integration tests on local Postgres (impersonation, concurrent
+  finalize / settle, appeal rules, stake floor, all three timer paths). In the browser: escalated
+  a complaint → 5-juror panel without the party who is also a juror; the draw recomputed from
+  the audited seed; root sees no ballot; juror Kavita Reddy sees only her case, commits a vote,
+  gets her receipt, and gets a 404 on a case she isn't on.

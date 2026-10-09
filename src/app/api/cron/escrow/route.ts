@@ -1,9 +1,11 @@
 import { NextRequest } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { runEscrowTick } from "@/lib/escrow/tick";
+import { runJuryTick } from "@/lib/admin/jury";
 
 /*
-  Cron endpoint that drives the escrow timing engine. A scheduler (the local
+  Cron endpoint that drives the escrow timing engine and the jury timer (commit /
+  reveal deadlines, src/lib/admin/jury.ts runJuryTick). A scheduler (the local
   worker/escrow-cron.mjs runner, or a Vercel/host cron in production) hits this on
   an interval. Node runtime (uses Prisma + viem); always dynamic.
 
@@ -47,7 +49,9 @@ async function handle(req: NextRequest) {
   }
   try {
     const result = await runEscrowTick();
-    return Response.json({ ok: true, at: new Date().toISOString(), ...result });
+    // The jury's commit / reveal deadlines (replace non-committers, finalize or redraw).
+    const jury = await runJuryTick();
+    return Response.json({ ok: true, at: new Date().toISOString(), ...result, jury });
   } catch (e) {
     console.error("escrow tick failed:", e);
     return Response.json({ ok: false, error: (e as Error).message }, { status: 500 });

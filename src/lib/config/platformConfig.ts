@@ -17,6 +17,14 @@ export interface PlatformSettings {
   workerGraceBusinessDays: number;
   workerStrikeSuspendThreshold: number;
   holidays: string[]; // YYYY-MM-DD
+  /** Jury: hours jurors have to commit, then to reveal (ADM-17 voting_*_hours). */
+  juryCommitHours: number;
+  juryRevealHours: number;
+  /** Jury panel sizes by case value, and for an appeal. */
+  juryPanelSmall: number;
+  juryPanelStandard: number;
+  juryPanelLarge: number;
+  juryAppealPanelSize: number;
 }
 
 const DEFAULTS: PlatformSettings = {
@@ -28,6 +36,12 @@ const DEFAULTS: PlatformSettings = {
   workerGraceBusinessDays: 1,
   workerStrikeSuspendThreshold: 3,
   holidays: [],
+  juryCommitHours: 48,
+  juryRevealHours: 24,
+  juryPanelSmall: 3,
+  juryPanelStandard: 5,
+  juryPanelLarge: 7,
+  juryAppealPanelSize: 7,
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -57,5 +71,11 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     workerGraceBusinessDays: num("worker_grace_business_days", DEFAULTS.workerGraceBusinessDays),
     workerStrikeSuspendThreshold: num("worker_strike_suspend_threshold", DEFAULTS.workerStrikeSuspendThreshold),
     holidays,
+    juryCommitHours: num("voting_commit_hours", DEFAULTS.juryCommitHours),
+    juryRevealHours: num("voting_reveal_hours", DEFAULTS.juryRevealHours),
+    juryPanelSmall: num("jury_panel_small", DEFAULTS.juryPanelSmall),
+    juryPanelStandard: num("jury_panel_standard", DEFAULTS.juryPanelStandard),
+    juryPanelLarge: num("jury_panel_large", DEFAULTS.juryPanelLarge),
+    juryAppealPanelSize: num("appeal_panel_size", DEFAULTS.juryAppealPanelSize),
   };
 }

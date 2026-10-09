@@ -14,23 +14,32 @@ const STATUS_TONE: Record<string, "info" | "warning" | "success" | "danger" | "d
   ADM-11 Dispute Queue. A JURY admin sees ONLY the cases they're assigned to; other
   roles see the whole queue. Parties are anonymized at this level.
 */
+/** "2/5 committed" during commit, "3/5 revealed" after. */
+function voteProgress(status: string, votes: { commitHash: string | null; revealedChoice: string | null }[]): string {
+  if (status === "COMMIT") return `${votes.filter((v) => v.commitHash).length}/${votes.length} committed`;
+  return `${votes.filter((v) => v.revealedChoice).length}/${votes.length} revealed`;
+}
+
 export default async function DisputeQueuePage() {
   await requireAdminAccess("disputes");
   const admin = await getCurrentAdmin();
 
   let assignedCaseIds: string[] | null = null;
+  let linked = true;
   if (admin?.role === "JURY") {
-    const juror = await adminDb.jurorProfile.findFirst({ where: { platformUserId: admin.id } });
+    // The juror this console login votes as (admin↔admin link — not a platform id).
+    const juror = await adminDb.jurorProfile.findUnique({ where: { adminUserId: admin.id } });
+    linked = !!juror;
     const assignments = juror
-      ? await adminDb.juryAssignment.findMany({ where: { jurorId: juror.id }, select: { caseId: true } })
+      ? await adminDb.juryAssignment.findMany({ where: { jurorId: juror.id, removedAt: null }, select: { caseId: true } })
       : [];
     assignedCaseIds = assignments.map((a) => a.caseId);
   }
 
   const cases = await adminDb.disputeCase.findMany({
     where: assignedCaseIds ? { id: { in: assignedCaseIds } } : undefined,
-    include: { _count: { select: { assignments: true, votes: true } } },
-    orderBy: { createdAt: "desc" },
+    include: { votes: { select: { commitHash: true, revealedChoice: true } } },
+        orderBy: { createdAt: "desc" },
   });
 
   return (
@@ -40,7 +49,7 @@ export default async function DisputeQueuePage() {
         {admin?.role === "JURY" ? "Your assigned cases only. " : ""}Parties are anonymized. Panel size is set by case value.
       </p>
       {cases.length === 0 ? (
-        <EmptyState title="No disputes" hint={admin?.role === "JURY" ? "You have no assigned cases." : "Escalated financial disputes appear here."} />
+        <EmptyState title="No disputes" hint={admin?.role === "JURY" ? (linked ? "You have no assigned cases." : "Your login isn't linked to a juror profile yet — ask a Root admin.") : "Escalated financial disputes appear here."} />
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="grid grid-cols-[1.6fr_1fr_1fr_0.8fr_1fr] gap-3 border-b border-line px-6 py-3 text-[10px] font-semibold uppercase tracking-wider text-ink3">
@@ -51,7 +60,7 @@ export default async function DisputeQueuePage() {
               <span className="text-[13px] font-medium text-ink">{c.clientLabel} vs {c.workerLabel}</span>
               <span className="text-[13px] font-semibold text-[#8FC7E8]">{formatInr(Number(c.escrowAmount))}</span>
               <span className="text-[12px] text-ink2">{c.panelSize} jurors ({c.valueTier})</span>
-              <span className="text-[12px] text-ink3">{c._count.votes}/{c._count.assignments}</span>
+              <span className="text-[12px] text-ink3">{voteProgress(c.status, c.votes)}</span>
               <span><StatusBadge tone={STATUS_TONE[c.status] ?? "draft"}>{c.status}</StatusBadge></span>
             </Link>
           ))}

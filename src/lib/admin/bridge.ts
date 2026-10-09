@@ -177,6 +177,12 @@ export async function bridgeComplaintForEscalation(complaintId: string) {
   };
 }
 
+/** The two parties to a hire, by id — the jury uses it to keep them off their own panel. */
+export async function bridgeHireParties(hireId: string): Promise<{ clientUserId: string; workerUserId: string } | null> {
+  const h = await platformDb.hire.findUnique({ where: { id: hireId }, select: { clientId: true, workerId: true } });
+  return h ? { clientUserId: h.clientId, workerUserId: h.workerId } : null;
+}
+
 /** Freeze the phase in the Platform DB when a dispute opens (mirrors the on-chain freeze). */
 export async function bridgeMarkPhaseDisputed(phaseId: string) {
   // Guarded by the phase state machine: only a live (funded, not yet settled) phase

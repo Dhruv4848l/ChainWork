@@ -15,13 +15,17 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   party — the backend can't release someone else's escrow.
 - **[OK] An Analyst (read-only) can't mutate.** Admin sections are gated by `requireAdminAccess(navKey)`
   at the route AND filtered from the sidebar; the Analyst role has no write sections.
-- **[OPEN — F2, corrected 2026-10-07] A jury admin can vote as any juror on a panel.**
-  `assertJurorOnCase` requires a JURY/ROOT role and checks that the `jurorId` *sent by the browser*
-  is on the panel. It does not check that the logged-in admin **is** that juror: there is no
-  AdminUser ↔ JurorProfile link. The queue filter also compares IDs from different databases.
-  This line said "[OK]" until the 2026-09-27 analysis showed otherwise. Fix planned in
-  [ROADMAP Stage 2.1](ROADMAP.md#stage-2--jury-integrity--security-m), together with F3 (the
-  case state machine: double finalize / settle, deadlines).
+- **[FIXED 2026-10-09 — F2][TEST] A jury admin could vote as any juror on a panel.**
+  `assertJurorOnCase` trusted a `jurorId` sent by the browser, and nothing linked an AdminUser to a
+  JurorProfile. Now `JurorProfile.adminUserId` links each juror to their own console login; commit
+  and reveal resolve the juror from the session and take no juror id (`juryActions.test.ts`). Root
+  has no ballot; a JURY login sees only cases it sits on (others 404) and fellow jurors only as
+  "Juror n". The queue filter that compared ids across databases is fixed.
+- **[FIXED 2026-10-09 — F3][TEST] The dispute engine ignored case status and deadlines.** Double
+  finalize paid stakes twice; an appealed case could still be settled; reveals worked mid-commit;
+  stakes could go negative. Now a transition table (`voting.ts` `disputeBlocker`) plus guarded
+  status claims, a jury timer for the deadlines, and a stake floor (`disputeMachine.test.ts`,
+  `tests/integration/jury.int.test.mts` incl. concurrent finalize / settle).
 - **[OK][TEST] The two-DB boundary holds.** Admin-surface code reaches Platform data only via the
   bridge. Now enforced by `src/lib/admin/boundary.test.ts`, which fails if any admin file imports
   the Platform DB directly.
@@ -109,7 +113,7 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   v3 is deployed to Amoy — until then the console offers only the review note.
 
 ## Summary
-_Updated 2026-10-07._
+_Updated 2026-10-09._
 
 **Fixed:**
 - Login brute-force (Phase 13).
@@ -117,10 +121,9 @@ _Updated 2026-10-07._
 - The reconciler adopting refused fundings.
 - The WalletConnect server leak.
 - Stranded flagged payments (desk + alert; refund on v3).
+- The jury integrity gaps F2 / F3 (2026-10-09).
 
 **Open:**
-- **The jury's integrity gaps F2 / F3**: next after the testnet switch,
-  [ROADMAP Stage 2](ROADMAP.md#stage-2--jury-integrity--security-m).
 - The shared rate-limit store.
 - Production infrastructure (HSM custody, real KYC / AML providers) and the mandatory contract
   audit, all in the pre-mainnet checklist.

@@ -13,7 +13,8 @@ import { formatInr } from "@/lib/format";
 export default async function PendingSettlementsPage() {
   await requireAdminAccess("settlements");
   const cases = await adminDb.disputeCase.findMany({
-    where: { verdictChoice: { not: null }, status: { notIn: ["EXECUTED", "CLOSED"] } },
+    // Only a live verdict: an APPEALED case is settled by its appeal, never by itself.
+    where: { verdictChoice: { not: null }, status: "VERDICT" },
     orderBy: { updatedAt: "desc" },
   });
 

@@ -87,7 +87,7 @@ const ADMINS = [
 
 // ---------------------------------------------------------------------------
 let phone = 9876540101;
-const created = { workers: 0, clients: 0, jurors: 0, admins: 0, cases: 0 };
+const created = { workers: 0, clients: 0, jurors: 0, jurorLogins: 0, admins: 0, cases: 0 };
 const userByEmail = {};
 
 const skills = await db.skill.findMany();
@@ -159,6 +159,16 @@ for (const [i, email] of JUROR_EMAILS.entries()) {
       data: { platformUserId: u.id, displayName: u.name, status: "ACTIVE", stakeBalance: 1000, agreementRate: 68 + (i * 2) % 28, casesCount: 2 + (i % 6) },
     });
     created.jurors++;
+  }
+  // The juror's own console login (JURY role) — a juror votes only as themselves.
+  // Local/demo password admin123 + the dev TOTP; in production the short seeded TOTP
+  // secret is refused, so enrol each one with scripts/rotate-admin-credentials.mts.
+  if (!j.adminUserId) {
+    const loginEmail = `juror.${email.split("@")[0]}@chainwork.local`;
+    const login = (await adb.adminUser.findUnique({ where: { email: loginEmail } }))
+      ?? (await adb.adminUser.create({ data: { email: loginEmail, passwordHash: ADMIN_PW, name: u.name, role: "JURY", twoFactorEnabled: true, totpSecret: "JBSWY3DPEHPK3PXP" } }));
+    j = await adb.jurorProfile.update({ where: { id: j.id }, data: { adminUserId: login.id } });
+    created.jurorLogins++;
   }
   jurorByEmail[email] = j;
 }

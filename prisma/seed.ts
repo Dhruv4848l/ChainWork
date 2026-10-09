@@ -464,17 +464,26 @@ async function main() {
     { u: arjun, agree: 79, cases: 12 },
     { u: lakshmi, agree: 95, cases: 44 },
   ];
+  // Each juror votes from their OWN console login (JURY role), linked by
+  // JurorProfile.adminUserId — e.g. juror.suresh@chainwork.local / admin123.
+  async function jurorLogin(u: { id: string; name: string; email: string | null }) {
+    const local = (u.email ?? u.id).split("@")[0];
+    const login = await admin.adminUser.create({
+      data: { email: `juror.${local}@chainwork.local`, passwordHash: adminPw, name: u.name, role: "JURY", twoFactorEnabled: true, totpSecret: "JBSWY3DPEHPK3PXP" },
+    });
+    return login.id;
+  }
   const jurors = [];
   for (const j of jurorSeeds) {
     jurors.push(
       await admin.jurorProfile.create({
-        data: { platformUserId: j.u.id, displayName: j.u.name, stakeBalance: 1000, agreementRate: j.agree, casesCount: j.cases, status: "ACTIVE" },
+        data: { platformUserId: j.u.id, adminUserId: await jurorLogin(j.u), displayName: j.u.name, stakeBalance: 1000, agreementRate: j.agree, casesCount: j.cases, status: "ACTIVE" },
       })
     );
   }
   // one more juror who is a client (business jurors allowed)
   const businessJuror = await admin.jurorProfile.create({
-    data: { platformUserId: eventsCo.id, displayName: eventsCo.name, stakeBalance: 1000, agreementRate: 89, casesCount: 27, status: "ON_LEAVE" },
+    data: { platformUserId: eventsCo.id, adminUserId: await jurorLogin(eventsCo), displayName: eventsCo.name, stakeBalance: 1000, agreementRate: 89, casesCount: 27, status: "ON_LEAVE" },
   });
 
   // The dispute case (ADM-12) — Phase 2 of the shop hire. Parties anonymized.

@@ -12,7 +12,7 @@ import { rateLimit, rateLimitReset } from "@/lib/rateLimit";
 import * as bridge from "@/lib/admin/bridge";
 import * as jury from "@/lib/admin/jury";
 import { adminDb as adb } from "@/lib/adminDb";
-import type { VerdictChoice } from "@/generated/admin";
+import type { AdminUser, VerdictChoice } from "@/generated/admin";
 
 export interface AdminActionState {
   ok?: boolean;
@@ -114,10 +114,12 @@ export async function triageComplaintAction(complaintId: string, lane: "TRIVIAL"
     // Escalate to the jury: open an anonymized case + freeze the phase escrow.
     const details = await bridge.bridgeComplaintForEscalation(complaintId);
     if (details) {
-      const { caseId, panel, frozen } = await jury.escalateToJury(details);
+      const { caseId, panel, target, frozen, draw } = await jury.escalateToJury(details);
       await bridge.bridgeMarkPhaseDisputed(details.subjectPhaseId);
-      await writeAudit({ actorAdminId: admin.id, action: "DISPUTE_OPEN", targetType: "DisputeCase", targetId: caseId, after: { panel, frozen } });
+      // The seed + eligible list let anyone recompute the draw (voting.drawPanel).
+      await writeAudit({ actorAdminId: admin.id, action: "DISPUTE_OPEN", targetType: "DisputeCase", targetId: caseId, after: { panel, target, frozen, drawSeed: draw.seed, eligible: draw.eligible, drawn: draw.drawn } });
       extra = ` A ${panel}-juror case opened${frozen ? " and the phase escrow was frozen on-chain" : ""}.`;
+      if (panel < target) extra += ` Only ${panel} of ${target} jurors were available; the jury timer adds more as they become eligible.`;
     }
   }
   revalidatePath("/admin/complaints");
@@ -127,38 +129,48 @@ export async function triageComplaintAction(complaintId: string, lane: "TRIVIAL"
 
 // ---------------------------------------------------------------------------
 // Jury commit-reveal voting + verdict (ADM-12)
+//
+// A juror votes only as THEMSELVES: the juror is the JurorProfile linked to the
+// logged-in console user (JurorProfile.adminUserId). The browser never names a juror.
 // ---------------------------------------------------------------------------
-async function assertJurorOnCase(caseId: string, jurorId: string) {
+async function currentJuror(): Promise<{ admin: AdminUser; jurorId: string } | { error: string }> {
   const admin = await requireAdminAccess("disputes");
-  if (admin.role !== "JURY" && admin.role !== "ROOT_SUPER_ADMIN") throw new Error("Not a juror.");
-  const assigned = await adb.juryAssignment.findFirst({ where: { caseId, jurorId } });
-  if (!assigned) throw new Error("Not assigned to this case.");
-  return admin;
+  const juror = await jury.jurorForAdmin(admin.id);
+  if (!juror) return { error: "Your console login isn't linked to a juror profile, so you can't vote." };
+  return { admin, jurorId: juror.id };
 }
 
-export async function commitVoteAction(caseId: string, jurorId: string, commitHash: string): Promise<AdminActionState> {
-  const admin = await assertJurorOnCase(caseId, jurorId);
-  const res = await jury.commitVote(caseId, jurorId, commitHash);
+export async function commitVoteAction(caseId: string, commitHash: string): Promise<AdminActionState> {
+  const who = await currentJuror();
+  if ("error" in who) return { error: who.error };
+  const res = await jury.commitVote(caseId, who.jurorId, commitHash);
   if (!res.ok) return { error: res.error };
-  await writeAudit({ actorAdminId: admin.id, action: "JURY_COMMIT", targetType: "DisputeCase", targetId: caseId });
+  await writeAudit({ actorAdminId: who.admin.id, action: "JURY_COMMIT", targetType: "DisputeCase", targetId: caseId, after: { jurorId: who.jurorId } });
   revalidatePath(`/admin/disputes/${caseId}`);
-  return { ok: true, message: "Vote committed. Keep your salt to reveal." };
+  return { ok: true, message: "Vote committed. Keep your vote receipt — you need it to reveal." };
 }
 
-export async function revealVoteAction(caseId: string, jurorId: string, choice: VerdictChoice, splitPct: number, salt: string): Promise<AdminActionState> {
-  const admin = await assertJurorOnCase(caseId, jurorId);
-  const res = await jury.revealVote(caseId, jurorId, choice, splitPct, salt);
+export async function revealVoteAction(caseId: string, choice: VerdictChoice, splitPct: number, salt: string): Promise<AdminActionState> {
+  const who = await currentJuror();
+  if ("error" in who) return { error: who.error };
+  const res = await jury.revealVote(caseId, who.jurorId, choice, splitPct, salt);
   if (!res.ok) return { error: res.error };
-  await writeAudit({ actorAdminId: admin.id, action: "JURY_REVEAL", targetType: "DisputeCase", targetId: caseId, after: { choice } });
+  await writeAudit({ actorAdminId: who.admin.id, action: "JURY_REVEAL", targetType: "DisputeCase", targetId: caseId, after: { jurorId: who.jurorId, choice } });
   revalidatePath(`/admin/disputes/${caseId}`);
   return { ok: true, message: "Vote revealed." };
 }
 
+/** Root, or a juror on this case's panel, may finalize once the rules allow it. */
 export async function finalizeVerdictAction(caseId: string): Promise<AdminActionState> {
   const admin = await requireAdminAccess("disputes");
+  if (admin.role === "JURY") {
+    const juror = await jury.jurorForAdmin(admin.id);
+    const seated = juror && (await adb.juryAssignment.findFirst({ where: { caseId, jurorId: juror.id, removedAt: null } }));
+    if (!seated) return { error: "Only a juror on this panel can finalize it." };
+  }
   const res = await jury.tallyAndFinalize(caseId);
   if (!res.ok) return { error: res.error };
-  await writeAudit({ actorAdminId: admin.id, action: "JURY_VERDICT", targetType: "DisputeCase", targetId: caseId, after: { verdict: res.verdict, splitPct: res.splitPct } });
+  await writeAudit({ actorAdminId: admin.id, action: "JURY_VERDICT", targetType: "DisputeCase", targetId: caseId, after: { verdict: res.verdict, splitPct: res.splitPct, slashedNonRevealers: res.slashedNonRevealers } });
   revalidatePath(`/admin/disputes/${caseId}`);
   revalidatePath("/admin/settlements");
   return { ok: true, message: `Verdict: ${res.verdict}${res.splitPct != null ? ` (${res.splitPct}% to worker)` : ""}. Ready to settle.` };
@@ -166,11 +178,16 @@ export async function finalizeVerdictAction(caseId: string): Promise<AdminAction
 
 export async function appealCaseAction(caseId: string): Promise<AdminActionState> {
   const admin = await requireAdminAccess("disputes");
+  // Jurors decide cases; they don't send their own verdicts to appeal.
+  if (admin.role === "JURY") return { error: "Jurors can't open an appeal." };
   const res = await jury.appealCase(caseId);
   if (!res.ok) return { error: res.error };
-  await writeAudit({ actorAdminId: admin.id, action: "JURY_APPEAL", targetType: "DisputeCase", targetId: caseId, after: { appealId: res.appealId } });
+  await writeAudit({ actorAdminId: admin.id, action: "JURY_APPEAL", targetType: "DisputeCase", targetId: caseId, after: { appealId: res.appealId, panel: res.panel, target: res.target, drawSeed: res.draw.seed, eligible: res.draw.eligible, drawn: res.draw.drawn } });
   revalidatePath("/admin/disputes");
-  return { ok: true, message: "Appeal opened to a larger panel." };
+  revalidatePath(`/admin/disputes/${caseId}`);
+  revalidatePath("/admin/settlements");
+  const short = res.panel < res.target ? ` Only ${res.panel} of ${res.target} jurors were available.` : "";
+  return { ok: true, message: `Appeal opened to a ${res.panel}-juror panel.${short}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -178,19 +195,27 @@ export async function appealCaseAction(caseId: string): Promise<AdminActionState
 // ---------------------------------------------------------------------------
 export async function settleDisputeAction(caseId: string): Promise<AdminActionState> {
   const admin = await requireAdminAccess("settlements");
-  const dispute = await adminDb.disputeCase.findUnique({ where: { id: caseId } });
-  if (!dispute) return { error: "Case not found." };
-  if (dispute.verdictChoice == null) return { error: "No verdict to execute yet." };
+  // Claim VERDICT → EXECUTED first: a second click (or a second admin) is refused here,
+  // and an APPEALED case never gets this far.
+  const claim = await jury.claimSettlement(caseId);
+  if (!claim.ok) return { error: claim.error };
+  const dispute = claim.dispute;
 
   // Map the verdict to a worker basis-points split and execute it through the payment
   // service (via the bridge — the admin surface never touches the platform DB itself).
   const workerBps = dispute.verdictChoice === "RELEASE_WORKER" ? 10000 : dispute.verdictChoice === "REFUND_CLIENT" ? 0 : (dispute.verdictSplitPct ?? 50) * 100;
-  const res = await bridge.bridgeExecuteVerdictSplit(dispute.subjectPhaseId, workerBps);
+  let res: Awaited<ReturnType<typeof bridge.bridgeExecuteVerdictSplit>>;
+  try {
+    res = await bridge.bridgeExecuteVerdictSplit(dispute.subjectPhaseId, workerBps);
+  } catch (e) {
+    await jury.releaseSettlementClaim(caseId);
+    throw e;
+  }
   if (!res.ok) {
+    await jury.releaseSettlementClaim(caseId);
     await writeAudit({ actorAdminId: admin.id, action: "SETTLEMENT_FAILED", targetType: "DisputeCase", targetId: caseId, after: { workerBps, paymentId: res.paymentId, code: res.code } });
     return { error: `The settlement failed: ${res.reason}` };
   }
-  await adminDb.disputeCase.update({ where: { id: caseId }, data: { status: "EXECUTED" } });
   await writeAudit({ actorAdminId: admin.id, action: "SETTLEMENT_EXECUTE", targetType: "DisputeCase", targetId: caseId, after: { workerBps, txHash: res.txHash, paymentId: res.paymentId } });
   revalidatePath("/admin/settlements");
   return { ok: true, message: `Settled (${workerBps / 100}% to worker).` };
