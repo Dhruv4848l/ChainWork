@@ -21,6 +21,18 @@
       "port": 3000
     },
     {
+      "name": "web-webpack-demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:webpack"
+      ],
+      "port": 3000,
+      "env": {
+        "PAYMENT_MODE": "demo"
+      }
+    },
+    {
       "name": "web-prod",
       "runtimeExecutable": "npx",
       "runtimeArgs": [

@@ -647,12 +647,14 @@ from a faucet). The full ordered plan is in [ROADMAP.md → Future path](docs/RO
 4. **Switch to testnet.** Follow [RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md):
    close the demo-money escrows, set `PAYMENT_MODE=testnet`, smoke-test one payment and its
    receipt, then re-run `npm run test:e2e:remote`.
-5. ~~Jury integrity fixes (F2/F3)~~ — done 2026-10-09, see the last section. **Before deploying
-   them:** apply the admin migration `juror_admin_link` to Neon (`npm run db:deploy`) and give each
-   production juror a login (re-running `seed-demo-accounts.mjs` links them; then
-   `rotate-admin-credentials.mts` gives them real passwords + TOTP). Until then no production
-   juror can be drawn. The new jury timer will also process the stale demo cases whose deadlines
-   passed long ago.
+5. ~~Jury integrity fixes (F2/F3)~~ — **deployed 2026-10-09** (`30fa7a0`): admin migration
+   `juror_admin_link` applied to Neon; the 5 production jurors have their own JURY logins
+   (`juror.<name>@chainwork.local`, passwords + 2FA in git-ignored `.admin-credentials/`); the one
+   open demo case's reveal deadline was moved to 2026-10-23 so the new jury timer leaves it alone.
+   Site stays in demo mode (relayer unfunded). Local QA the same day: every role logs in with the
+   right console sections; milestone plan → both sign → fund (demo money) → deliver → approve →
+   two receipts (PDF, verify page, both dashboards). **KYC is still a mock** — the ID upload isn't
+   stored and submitting auto-approves, so the verifier never sees documents (roadmap 4.4).
 
 ## Jury integrity — F2 / F3 (2026-10-09)
 
