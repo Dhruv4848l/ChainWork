@@ -1,4 +1,5 @@
 import "server-only";
+import nodemailer, { type Transporter } from "nodemailer";
 import { recordDevMessage } from "@/lib/devOutbox";
 
 /*
@@ -12,12 +13,17 @@ import { recordDevMessage } from "@/lib/devOutbox";
     EMAIL_PROVIDER="brevo"  → Brevo API (brevo.com, ex-Sendinblue). Free tier can
                               email any recipient once your sender address is
                               validated in their dashboard. Needs BREVO_API_KEY.
+    EMAIL_PROVIDER="gmail"  → your own Gmail account over SMTP (nodemailer). Emails
+                              anyone, ~500/day. Needs GMAIL_USER + GMAIL_APP_PASSWORD
+                              (a 16-char Google "App password" — requires 2-Step
+                              Verification on that account; NOT the normal password).
     EMAIL_PROVIDER="mock"   → (default) logs to the server console — dev behavior.
 
-  EMAIL_FROM sets the sender (e.g. 'ChainWork <onboarding@resend.dev>').
+  EMAIL_FROM sets the sender (e.g. 'ChainWork <onboarding@resend.dev>'). For gmail
+  only its display name is used — Gmail always sends from GMAIL_USER.
   Same fail-safe contract as src/lib/sms.ts: missing keys or a provider failure
   falls back to the console log so signup/reset flows never block; the result
-  reports delivered:false + the error. Plain REST, no SDK dependency.
+  reports delivered:false + the error. Resend/Brevo are plain REST, no SDK.
 */
 
 export type EmailResult = { delivered: boolean; provider: string; error?: string };
@@ -28,6 +34,12 @@ function provider(): string {
 
 function fromAddress(): string {
   return process.env.EMAIL_FROM?.trim() || "ChainWork <onboarding@resend.dev>";
+}
+
+/** Split 'Name <addr>' (or a bare addr) into its display name and address. */
+function parseFrom(): { name: string; email: string } {
+  const m = fromAddress().match(/^(.*?)\s*<([^>]+)>$/);
+  return m ? { name: m[1].replace(/^"|"$/g, ""), email: m[2] } : { name: "ChainWork", email: fromAddress() };
 }
 
 /** Absolute URL for links that leave the app (emails). */
@@ -65,9 +77,8 @@ async function sendViaResend(to: string, subject: string, html: string): Promise
 async function sendViaBrevo(to: string, subject: string, html: string): Promise<EmailResult> {
   const key = process.env.BREVO_API_KEY;
   if (!key) return { delivered: false, provider: "brevo", error: "BREVO_API_KEY not set" };
-  // Brevo wants sender split into {name, email}; parse 'Name <addr>' or bare addr.
-  const m = fromAddress().match(/^(.*?)\s*<([^>]+)>$/);
-  const sender = m ? { name: m[1].replace(/^"|"$/g, ""), email: m[2] } : { name: "ChainWork", email: fromAddress() };
+  // Brevo wants sender split into {name, email}.
+  const sender = parseFrom();
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: { "api-key": key, "Content-Type": "application/json", Accept: "application/json" },
@@ -80,11 +91,36 @@ async function sendViaBrevo(to: string, subject: string, html: string): Promise<
   return { delivered: true, provider: "brevo" };
 }
 
+// One SMTP connection setup per server process; nodemailer opens a socket per send.
+let gmailTransport: Transporter | null = null;
+
+async function sendViaGmail(to: string, subject: string, html: string): Promise<EmailResult> {
+  const user = process.env.GMAIL_USER?.trim();
+  // Google displays app passwords as "abcd efgh ijkl mnop" — accept it pasted that way.
+  const pass = process.env.GMAIL_APP_PASSWORD?.replace(/\s+/g, "");
+  if (!user || !pass) return { delivered: false, provider: "gmail", error: "GMAIL_USER / GMAIL_APP_PASSWORD not set" };
+  gmailTransport ??= nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    auth: { user, pass },
+    // Fail fast so a Gmail outage can't hang signup — the mock fallback takes over.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  });
+  await gmailTransport.sendMail({ from: { name: parseFrom().name, address: user }, to, subject, html });
+  return { delivered: true, provider: "gmail" };
+}
+
 export async function sendEmail(to: string, subject: string, html: string): Promise<EmailResult> {
   const p = provider();
   try {
-    if (p === "resend" || p === "brevo") {
-      const r = p === "resend" ? await sendViaResend(to, subject, html) : await sendViaBrevo(to, subject, html);
+    if (p === "resend" || p === "brevo" || p === "gmail") {
+      const r =
+        p === "resend" ? await sendViaResend(to, subject, html)
+        : p === "brevo" ? await sendViaBrevo(to, subject, html)
+        : await sendViaGmail(to, subject, html);
       if (r.delivered) return r;
       console.warn(`[EMAIL] ${p} send failed (${r.error}) — falling back to mock log.`);
       mockLog(to, subject, html);
