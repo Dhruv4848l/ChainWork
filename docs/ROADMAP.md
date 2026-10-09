@@ -1,209 +1,201 @@
 # ChainWork — Fix & Completion Roadmap
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · companion to [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md)_
+_Created 2026-09-27 · baseline HEAD `349ab55` · companion to [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md) ·
+**updated 2026-10-07** (status of every finding + the [future path](#future-path))_
 
-Goal: make ChainWork **correct, secure and fully working on testnet (Polygon Amoy)**. That
-covers the 8 analysis findings (F1–F8), the wallet-integration problems (W1–W10) and the
-browser-extension problems (E1–E8). Mainnet readiness is a separate, later track (section 9).
+Goal: make ChainWork **correct, secure and fully working on testnet (Polygon Amoy)**, then
+grow it into the product the pitch describes. Real money comes only after the
+[pre-mainnet checklist](PRE_MAINNET_CHECKLIST.md).
 
-> **Payment-first execution:** the wallet and extension work (sections 1–2 below), plus receipts,
-> demo-mode payments, the multi-crypto payment window and the live wallet ticker, is broken into
-> phases P0–P7 in [PAYMENT_SYSTEM_PLAN.md](PAYMENT_SYSTEM_PLAN.md). That plan runs **before**
-> the jury and cleanup work here. **Status (2026-10-03): P0–P7 done** on the local chain; going
-> live on Amoy follows [RUNBOOK_DEMO_TO_TESTNET.md](RUNBOOK_DEMO_TO_TESTNET.md).
+**Where things stand (2026-10-07):**
+- The payment rework ([PAYMENT_SYSTEM_PLAN.md](PAYMENT_SYSTEM_PLAN.md), P0–P7) carried out most
+  of this roadmap: every wallet (W) and browser-extension (E) problem is fixed or reduced to a
+  manual check.
+- It is live at https://chain-work-afdm.vercel.app with dummy money, and PhaseEscrow v2 is on
+  Amoy.
+- Two critical production holes found while deploying are closed: the admin 2FA bypass and the
+  public wallet phrase.
+- **Still open:**
+  - The switch to real testnet transactions (wallet top-ups only).
+  - The jury's integrity gaps (**F2/F3**).
+  - A shared rate-limit store.
+  - A few half-built buttons (F8).
 
 ---
 
-## 1. The new findings: wallet and browser extension
+## 1. Status of every finding
 
-These were found after the first report, by reading the wallet code and by running **read-only**
-checks against the Amoy deployment configured in `.env`.
+Found 2026-09-27. F1–F8 are written up in PROJECT_ANALYSIS.md. The full write-up of each W / E
+problem as found (with evidence) is in this file's history (`git show 9bc4531:docs/ROADMAP.md`).
+✅ fixed · 🟡 partly · ⬜ open.
 
-### Wallet integration (W)
+| ID | Problem (short) | Status | Where it was fixed |
+|---|---|---|---|
+| F1 | Admin 2FA bypass `000000` in production | ✅ 2026-10-03 | `totpPolicy.ts` (`db22435`); prod admins rotated. The shared rate limiter is still ⬜ (R1.2) |
+| **F2** | **One jury admin can cast every juror's vote** | ⬜ | [Stage 2.1](#stage-2--jury-integrity--security-m) |
+| **F3** | **Jury engine never checks case status / deadlines** | ⬜ | [Stage 2.2](#stage-2--jury-integrity--security-m) |
+| F4 | "Request changes" on any phase | ✅ P1 | `phaseMachine.ts` |
+| F5 | Delivery stake only in the DB | ✅ P3.6 | `src/lib/escrow/stake.ts` |
+| F6 / W9 | `MOCK_BLOCKCHAIN` half-covers the chain | ✅ P0 | `PAYMENT_MODE` + `demoAdapter.ts` |
+| F7 | DB and chain drift | ✅ P1 | `reconcile.ts` (every cron tick) |
+| F8 | Leftover stubs + repo clutter | 🟡 | screenshots done (P7.3); the rest is in [Stage 3](#stage-3--finish-whats-half-built-m) |
+| W1 | Amoy can't move money (public phrase, no roles, no gas) | 🟡 | phrase replaced (`29b7fc7`), v2 deployed + roles granted (2026-10-06). **The relayer still has no gas** (Stage 1.2) |
+| W2 | Funding mints money out of nothing | ✅ P3.1 | real balance only |
+| W3 | Wrong balances after linking | ✅ P3.2–3.3 | every balance separately + "Move to my wallet" |
+| W4 | Linking only half works | ✅ P3.4 / P6 | per-phase payout target; clients fund from their own wallet |
+| W5 | Weak ownership proof | ✅ P3.5 | SIWE + one-time code + 24 h hold (`src/lib/wallet/link.ts`) |
+| W6 | Parallel transactions collide | ✅ P1 | `signerLock.ts` |
+| W7 | Money actions wait on chain inside one request | 🟡 P1 | every attempt recorded first + finished by the reconciler; a fully async queue was not built |
+| W8 | Gas top-ups expensive at scale | 🟡 P3.7 | leftover gas swept back; paymaster is [Stage 4.5](#stage-4--the-features-the-pitch-promises-l) |
+| W10 | Token invisible in wallets | ✅ P4.7 | `wallet_watchAsset`, explorer links |
+| E1 | Only one extension seen | ✅ P4 | EIP-6963 picker |
+| E2 | No network handling | ✅ P4 | `useEnsureChain()` + wrong-network banner |
+| E3 | No live connection state | ✅ P4 | wagmi watchers, no reloads |
+| E4 | Extension can't sign real transactions | 🟡 P6 | clients fund from their wallet; **approve-release from the wallet** is [Stage 3.6](#stage-3--finish-whats-half-built-m) |
+| E5 | Raw wallet errors | ✅ P4 | `walletErrorMessage()` |
+| E6 | No mobile | 🟡 P4 | WalletConnect wired, project id set on Vercel; **never tried from a real phone** (Stage 1.5) |
+| E7 | CSP blocks the wallet stack | ✅ P4 | `next.config.ts` |
+| E8 | No wallet library | ✅ P4 | wagmi 3 |
 
-| ID | Problem | Evidence |
-|---|---|---|
-| **W1** | **The Amoy setup can't move money.** (a) `CHAIN_MNEMONIC` is the **public Hardhat test phrase**, so the relayer is `0xf39F…2266` (Hardhat account #0) and every custodial wallet's private key is public. Sweeper bots drain these addresses on every public testnet; the relayer holds **0.0005 POL**. (b) The relayer **does not have `ATTESTOR_ROLE`** on the deployed escrow `0xfd80…0dd8`: `deploy.js` gives every role to the *deployer* key, not to the relayer. (c) So every gas top-up fails ("relayer out of gas"), and `markDelivered` / `approveRelease`-relay / `autoRelease` / `raiseDispute` / `resolveDispute` / `refundToClient` would all revert. | Live `hasRole` read → `false`; balance read; `contracts/scripts/deploy.js:26` |
-| **W2** | **Funding creates money out of nothing.** `fundPhase` mints any shortfall straight into the client's wallet (`ensureStablecoin`), so the client's balance and "Add funds" have no effect, and escrow is never really funded by the client. | `src/lib/chain/escrow.ts` `ensureStablecoin` |
-| **W3** | **Balances are wrong after linking a wallet.** Once an external wallet is linked, the balance shown is the *external* address's; "Withdraw" still moves the *custodial* balance. Earnings already in the custodial wallet disappear from the UI, and withdraw reports moving money the user can't see. | `src/lib/chain/wallet.ts` `getWalletSummary` vs `withdrawCustodial` |
-| **W4** | **Linking a wallet only half works.** For **workers**, it only affects phases funded *after* linking (the payee is fixed at funding time). For **clients** it does nothing: funding and refunds always use the custodial address, yet the UI says "payouts now settle to this address". | `fundPhase` records `msg.sender` = custodial client |
-| **W5** | **The ownership proof is weak.** The nonce is made in the browser and never checked by the server. There's no domain / chain / expiry binding (not Sign-In with Ethereum, EIP-4361), no re-authentication, no notification, no cooldown, and the same address can be linked by several users. Anyone with a hijacked session can quietly redirect a worker's future payouts. | `ExternalWalletConnect.tsx`, `verifyAndLinkWalletAction` |
-| **W6** | **Parallel transactions can collide.** One relayer account signs everything, from concurrent requests *and* the cron. Two transactions sent at once can get the same nonce ("nonce too low" / "replacement underpriced"). | `escrow.ts`, `gas.ts`, `tick.ts` |
-| **W7** | **Money actions wait on chain confirmations inside a single request.** Funding can need 4 confirmed transactions (gas top-up → mint → approve → fund) within one server action. On Amoy this can outlast the host's time limit: the user sees "failed" while the transactions still land, and the DB and chain drift apart (same root cause as F7). | `fundPhase`, `waitFor` |
-| **W8** | **Gas top-ups get expensive at scale.** Every custodial wallet is topped up to 0.05 POL. That's fine for a demo, costly with many users, and the gas is stranded in each wallet. | `src/lib/chain/gas.ts` |
-| **W9** | = **F6**: `MOCK_BLOCKCHAIN` only covers part of the chain code (balances are faked, wallet top-up/withdraw hit the real chain). | |
-| **W10** | **The token is invisible in wallets.** Users can't see cwINR in MetaMask (no `wallet_watchAsset`), escrow addresses aren't shown, and explorer links only work on Amoy. | `explorerTxBase()` |
+**Found while deploying (not in the original analysis):**
 
-### Browser-extension integration (E) — why it "doesn't work hand in hand"
-
-| ID | Problem |
+| Problem | Status |
 |---|---|
-| **E1** | **Only one extension is ever seen.** The app reads raw `window.ethereum`. With several extensions installed (MetaMask + Coinbase + Brave/Phantom), whichever claims `window.ethereum` last wins. There's no EIP-6963 multi-wallet discovery and no wallet picker. |
-| **E2** | **No network handling.** The app never checks `chainId` and never calls `wallet_switchEthereumChain` / `wallet_addEthereumChain` for Amoy (80002). A user on Ethereum mainnet can link, but can never transact or see funds. |
-| **E3** | **No live connection state.** No `accountsChanged` / `chainChanged` / `disconnect` listeners. If the user switches account in MetaMask, the site doesn't notice, and the linked address and the active account can silently differ. State is refreshed with a full `window.location.reload()`. |
-| **E4** | **The extension can't sign any real transaction.** It's used for one thing only: a `personal_sign` to link. A client can't fund, approve or refund from MetaMask, and a worker can't move custodial funds to their own wallet. The contract already allows direct client calls (`approveRelease` accepts `msg.sender == e.client`); the app just never uses them. |
-| **E5** | **Raw error messages.** Errors such as user-rejected (4001), request already pending (-32002) and wrong chain are shown to users unchanged. |
-| **E6** | **No mobile support.** Mobile browsers have no injected wallet, and the WalletConnect button is disabled ("coming soon"). |
-| **E7** | **The security policy (CSP) will block a proper wallet stack.** `connect-src 'self'` blocks browser-side RPC reads and the WalletConnect relay (`wss://relay.walletconnect.com` etc.). |
-| **E8** | **No wallet library.** CLAUDE.md says "wagmi/viem", but wagmi isn't installed. There's no provider, no SSR-safe cookie storage, and no shared hooks. |
+| Live admin console open to anyone (`000000` + the public dev TOTP secret + `admin123`) | ✅ 2026-10-03 |
+| Production wallets derived from the public Hardhat phrase | ✅ 2026-10-03 |
+| Reconciler adopted short / wrong-currency fundings | ✅ P7.1 (regression-tested) |
+| WalletConnect set up on every server render (leak) | ✅ P7.2 |
+| Refused wallet payments stranded in escrow with no admin tool | ✅ 2026-10-06 — flagged desk + alert. Refund needs v3 on Amoy (Stage 1.1) |
 
----
+## 2. Status of the original fix plan (R0–R6)
 
-## 2. Principles for the fix pass
+| Phase | Outcome |
+|---|---|
+| R0 Baseline | ✅ local Postgres + Hardhat for dev (`.env.local`). ⬜ `.env.local.example` was never added (Stage 3.5) |
+| R1 Stop the bleeding | ✅ items 1, 3, 4 · 🟡 item 5: health check done; relayer gas, a dashboard card and a low-gas alert open (Stage 1.2 / 2.6) · 🟡 item 6: admins rotated; demo user logins to check (Stage 2.5) · ⬜ item 2: shared rate limits (Stage 2.4) |
+| R2 State machines + outbox | ✅ 5a phase machine, 5b ledger + reconciler (synchronous, record-first), 5d stake on-chain · ⬜ **5c jury engine (F2, F3)** → Stage 2 |
+| R3 Wallet model | ✅ all 8 items (P3, P0, P4) |
+| R4 Extension integration | ✅ items 1–3, 5–6 · 🟡 item 4: approve from wallet open · 🟡 item 7: phone untested |
+| R5 Cleanup | ✅ `APP_BASE_URL`, docs, screenshots · ⬜ settlement, check-in, dead stubs, lock file → Stage 3 |
+| R6 Tests | ✅ four layers (84 unit · 45 contract · 16 integration · 11 E2E + 9 against the live site) · ⬜ dispute-transition tests, re-run of the 8-attack assessment → Stage 2 |
 
-1. **Stop the bleeding first:** fix what is insecure or broken on the live testnet before polishing anything.
-2. **The chain is the source of truth for money.** The DB mirrors the chain and must be able to rebuild itself from on-chain state (reconciliation), never the other way round.
-3. **Every state change has a guard.** Each action checks the current status, and each state machine (phase, dispute) has one table of allowed transitions.
-4. **Two wallet modes, one escrow.** *Custodial* (default, no keys, gas sponsored) and *self-custody via extension* (the user signs in their wallet) both drive the same contract and the same DB records.
-5. **Each phase ships with tests** and ends with the build-manual checklist (typecheck, lint, `npm test`, `npm run test:contracts`, browser check), a commit, and CLAUDE.md / PROGRESS.md updates.
+## 3. Principles (unchanged)
+
+1. **Stop the bleeding first:** fix what is insecure or broken on the live site before polishing anything.
+2. **The chain is the source of truth for money.** The DB mirrors the chain and repairs itself from it (the reconciler), never the other way round.
+3. **Every state change has a guard:** one table of allowed transitions per state machine (phase ✅, payment ✅, dispute ⬜).
+4. **Two wallet modes, one escrow:** custodial and self-custody both go through `runPayment()` and the same ledger.
+5. **Each step ships with tests** and ends with: typecheck, lint, all four test layers, a browser check, a commit, and CLAUDE.md / PROGRESS.md updates.
 
 Effort key: **S** ≈ under half a day · **M** ≈ 1–2 days · **L** ≈ 3–5 days.
+Owner: **you** = needs your wallet, account or decision · **dev** = code work.
 
 ---
 
-## 3. Phase R0 — Baseline (S)
+## Future path
 
-- [ ] Run `tsc --noEmit`, `npm run lint`, `npm test`, `npm run test:contracts`; record the baseline in PROGRESS.md.
-- [ ] Decide the dev targets. Recommended: **local Postgres + local Hardhat chain** for development, with Neon + Amoy only for the deployed demo, so fix work never touches shared data.
-- [ ] Add `.env.local.example` with a complete local profile (local DB URLs, Hardhat chain, mock SMS/email).
+```
+Stage 1 Go live on testnet ──► Stage 2 Jury integrity + security ──► Stage 4 Pitch features ──► Stage 5 Pre-mainnet
+   (days, mostly top-ups)        (~1 week)                    ▲              (weeks)              (audit first)
+                                                              │
+                                 Stage 3 Finish half-built ───┘  (any time after Stage 1)
+```
 
-**Done when:** a clean baseline is recorded and a fresh clone runs end to end locally from the README.
+### Stage 1 — Go live on testnet (S each)
 
----
+Real transactions on Amoy with free test tokens. Nothing here has real value.
 
-## 4. Phase R1 — Stop the bleeding: security & live-config (M) · _do first_
+| # | Item | Owner |
+|---|---|---|
+| 1.1 | **Deploy PhaseEscrow v3 to Amoy** so ADM-10 can refund flagged payments. Send ~0.05 test POL to the deployer `0x6a04Fa4D1CB867106b3A362066a96E2921834cF8` (the deploy measured about 0.074–0.086 POL; it holds 0.075). Code: `deploy.js` option to reuse the live USDT / USDC. After the deploy: allowlist the assets, grant the relayer roles, set `CHAIN_ESCROW_ADDRESS` on Vercel and redeploy. | you (POL) + dev |
+| 1.2 | **Fund the relayer:** ≥ 0.5 test POL to `0x4170d656a439E1682004f9Fb1d3302442a076258`. It pays gas for every relayed action. | you |
+| 1.3 | **Switch to testnet** with [RUNBOOK_DEMO_TO_TESTNET.md](RUNBOOK_DEMO_TO_TESTNET.md): close the demo-money escrows, set `PAYMENT_MODE=testnet`, smoke-test one payment and its receipt, then run `npm run test:e2e:remote`. | dev, with your go-ahead |
+| 1.4 | Set `OPS_ALERT_EMAIL` on Vercel so flagged payments email someone. | you |
+| 1.5 | **One manual pass with real wallets:** MetaMask and Coinbase extensions together, plus WalletConnect from a phone. Everything so far used an injected test wallet. | you + dev |
+| 1.6 | Finish and commit the **Gmail email provider** (in progress locally: `src/lib/email.ts`, `package.json`). | you |
 
-| # | Item | Covers | Size |
+**Done when:** health shows `testnetReady: true`; one fund → deliver → approve cycle confirms on
+Amoy through the UI with real tx hashes and a TESTNET receipt; ADM-10 shows "Refund to payer".
+
+### Stage 2 — Jury integrity & security (M)
+
+The jury decides where escrowed money goes, so these are correctness bugs in a money path. Fix
+them before anyone relies on a verdict.
+
+| # | Item | Size |
+|---|---|---|
+| 2.1 | **F2 — one admin can vote as every juror.**<br>• Add `JurorProfile.adminUserId` (unique, admin DB only, no cross-DB FK).<br>• Commit and reveal derive `jurorId` **from the session** and never accept it from the browser.<br>• The case page and `JuryVoteControls` show only the viewer's own ballot.<br>• Fix the queue filter (`platformUserId: admin.id` compares IDs across databases). | M |
+| 2.2 | **F3 — the case state machine.** A `DISPUTE_TRANSITIONS` table:<br>• commit only in `COMMIT` before `commitDeadline`; reveal only in `REVEAL` before `revealDeadline`;<br>• finalize only from `REVEAL`, once;<br>• appeal and settle only from `VERDICT`, so an `APPEALED` case can't settle;<br>• settle flips the status atomically.<br>The tick enforces the deadlines (replace non-committers, slash non-revealers). Stakes can't go below 0, the panel size is the jurors actually assigned, and the dead `fee` placeholder goes. | M |
+| 2.3 | Fair panel draw: `crypto.randomInt` instead of `Math.random()`, with the seed in the audit log so a draw can be checked. (Verifiable randomness, Chainlink VRF, is a pre-mainnet item.) | S |
+| 2.4 | **Shared rate limits:** Upstash Redis / Vercel KV for consumer login, admin login, OTP and forgot-password. The in-memory limiter stays as the dev fallback. On serverless, the current limiter barely protects anything. | M |
+| 2.5 | Check production for the seeded `password123` worker / client logins. If they're there, rotate or remove them before testnet mode. | S |
+| 2.6 | Admin dashboard: a chain-health card (the `/api/health/chain` result) plus an `OPS_ALERT_EMAIL` alert when relayer gas runs low. | S |
+| 2.7 | Re-run the 8-attack assessment (`docs/ChainWork_Security_Assessment.docx`) plus the new cases: juror impersonation, double finalize / settle, rate limits across instances. | S |
+
+**Done when:**
+- Unit tests cover every allowed and forbidden dispute transition.
+- A juror can't commit or reveal for another juror.
+- Double finalize and double settle are rejected.
+- Login limits hold across instances.
+- SECURITY.md is updated.
+
+### Stage 3 — Finish what's half-built (M)
+
+| # | Item | Size |
+|---|---|---|
+| 3.1 | **Mutual settlement:** wire "Propose settlement" to the contract's `proposeSettlement` / `acceptSettlement` through `runPayment()`. Both parties see the proposal, either can accept or decline, and both get receipts. | M |
+| 3.2 | **On-site check-in (QR):** build it (worker scans a code the client shows; a timestamp and location go to the hire) or hide the button until it exists. | S hide · M build |
+| 3.3 | Delete the dead stubs (client `addFundsAction`, worker `withdrawAction`, `checkInAction` if hidden). Rename `StubButton` → `ActionButton`: it runs real actions now. | S |
+| 3.4 | `git rm` the Word lock file `docs/~$ainWork_ProjectII_PPT_Fill_Guide.docx`; add `~$*` to `.gitignore`. | S |
+| 3.5 | Add `.env.local.example` (local DBs, Hardhat chain, mock SMS / email), so a fresh clone runs from the README. | S |
+| 3.6 | **Approve release from the client's own wallet** (`approveRelease` signed in MetaMask, verified server-side like funding). It's relayed today. | M |
+| 3.7 | Payment window: a network-fee estimate in the quote. | S |
+| 3.8 | Statements: wallet section as a running balance (today it shows in / out / net). | S |
+| 3.9 | Local dev: run the local chain with state kept across restarts (anvil `--state`), or a re-seed script. A restarted Hardhat node forgets every balance and escrow. | S |
+| 3.10 | Refresh the walkthrough `.docx`: `pip install python-docx`, then `python scripts/build-demo-docx.py`. | S |
+
+### Stage 4 — The features the pitch promises (L)
+
+The LinkedIn pitch video lists these as coming next. Each one is testnet / sandbox first.
+
+| # | Feature | Notes | Size |
 |---|---|---|---|
-| 1 | **Remove the `000000` 2FA bypass.** If a demo shortcut is still wanted, allow it only when `ADMIN_2FA_DEMO_BYPASS=true` **and** `NODE_ENV !== "production"`, and write an audit entry when it's used. | F1 | S |
-| 2 | **Move rate limiting to a shared store** (Upstash Redis / Vercel KV), keeping the in-memory limiter as a dev fallback. Apply it to consumer login, admin login, OTP, forgot-password. | F1 | M |
-| 3 | **Rotate the chain keys.** Generate a private mnemonic (never the Hardhat phrase) and keep it only in `.env` / Vercel secrets. Add a startup guard that **refuses to boot on a non-local chain with the public test mnemonic**. | W1 | S |
-| 4 | **Fix role wiring.** `deploy.js` grants `ATTESTOR_ROLE` + `DISPUTE_ROLE` to the relayer address (from env) and writes `deployments/<net>.json`. Add a one-off `scripts/grant-roles.js` for the existing Amoy deployment, run by you with `DEPLOYER_KEY`. | W1 | S |
-| 5 | **Fund the relayer and monitor it.** Top up the new relayer from the Amoy faucet. Add `/api/health/chain` (RPC reachable, contracts deployed, relayer roles, relayer gas above threshold); the admin dashboard shows it and alerts when gas is low. | W1 | S |
-| 6 | **Rotate every demo password in deployed environments.** `admin123` / `password123` stay only in local seeds. | F1 | S |
+| 4.1 | **Usernames & public IDs** | A unique handle + a short public UID per user, shown on profiles, contracts and receipts instead of internal IDs (noted as a future feature in the demo-accounts doc). | M |
+| 4.2 | **More chains** | Ethereum Sepolia (ETH, USDC, WBTC) and BNB testnet (BNB, USDT): PhaseEscrow per chain, the payment window's network picker, health checks per chain (payment plan 6.6b / 6.6c). | M each |
+| 4.3 | **UPI & card payments** | A licensed Indian payment processor in sandbox mode for Add funds and Withdraw, replacing the mint / transfer mocks (`topUpCustodial` / `withdrawCustodial`). It needs idempotent webhooks and a "held pending" state for partial failures. | L |
+| 4.4 | **Official KYC** | A real KYC + liveness vendor in sandbox mode instead of auto-approve (`submitKycAction`), plus the rejected → manual-review path on the admin KYC queue. | L |
+| 4.5 | **Gasless custodial wallets** | ERC-4337 paymaster or ERC-2771 forwarder, so custodial wallets never hold gas and the relayer stops topping them up (W8). | L |
+| 4.6 | **Real-time messaging** (optional) | Replace the 5-second poll with a push channel once there are real users. | M |
 
-**Done when:** `000000` is rejected in production; a health check against Amoy shows relayer roles `true` and gas above threshold; one full fund → deliver → approve cycle succeeds on Amoy with real tx hashes.
+### Stage 5 — Pre-mainnet (real money)
 
----
-
-## 5. Phase R2 — State machines & chain reliability (L)
-
-### 5a. Escrow phase state machine
-- [ ] One `PHASE_TRANSITIONS` map in `src/lib/escrow/stateMachine.ts`; every phase action calls `assertTransition(from, to)`.
-- [ ] **F4:** `requestChangesAction` only from `DELIVERED` / `VERIFICATION_WINDOW_OPEN`.
-- [ ] Guard DB writes with `updateMany({ where: { id, status: <expected> } })` so a double-click or a parallel cron tick can't apply a change twice.
-
-### 5b. Transaction outbox + reconciliation (fixes F7, W6, W7)
-- [ ] New `ChainTx` table: `{ id, kind, phaseId, status: QUEUED|SENT|CONFIRMED|FAILED, txHash, nonce, attempts, error }`.
-- [ ] Money actions **queue** their chain work and return immediately with a "processing" status; the UI polls or uses `ThreadPoller`. The DB phase status only moves when the receipt is confirmed.
-- [ ] **One sender** for the relayer: a queue processed by the cron worker, plus viem's `nonceManager`, so the relayer's transactions go out one at a time (W6).
-- [ ] **Reconciler** in the tick: for each phase, compare `readEscrow()` with DB status and fix drift by following the chain. The retry loop the tick is currently stuck in goes away.
-- [ ] Record `EscrowTransaction` rows from confirmed receipts and events, not optimistically.
-
-### 5c. Jury engine (F2, F3)
-- [ ] **F2:** add `JurorProfile.adminUserId` (unique, nullable, admin DB only, still no cross-DB FK). Commit/reveal derive `jurorId` **from the session** and never trust one sent from the browser. The case detail page and `JuryVoteControls` show only the viewer's own ballot. Fix the queue filter (`platformUserId: admin.id` → `adminUserId: admin.id`).
-- [ ] **F3:** a `DISPUTE_TRANSITIONS` map:
-  - `commit` only in `COMMIT` and before `commitDeadline`.
-  - `reveal` only in `REVEAL` and before `revealDeadline`.
-  - `finalize` only from `REVEAL` (once quorum is met or the reveal deadline has passed).
-  - `appeal` / `settle` only from `VERDICT`; an `APPEALED` case can never settle.
-  - `settle` flips the status atomically, so it can't run twice.
-- [ ] Deadlines enforced by the tick: commit timeout → non-committers replaced or case moves on; reveal timeout → non-revealers slashed.
-- [ ] Stakes: minimum stake to be eligible; slash clamped at 0; `panelSize` = jurors actually assigned (or refuse to open the case if too few are eligible).
-- [ ] Replace `Math.random()` with `crypto.randomInt`, and record the seed in the audit log so panel draws can be audited.
-- [ ] Remove the dead `fee` placeholder.
-
-### 5d. Delivery stake on-chain (F5)
-- [ ] Call `chain.lockStake` when a hire at or above `deliveryStakeThresholdInr` is signed, `refundStake` when the hire completes, and `forfeitStake` in the tick's auto-cancel. DB stake status only follows confirmed transactions (through the outbox).
-
-**Done when:** new unit tests cover every allowed and forbidden transition (phase + dispute), a juror can't vote for another juror, double-finalize and double-settle are rejected, and a deliberately dropped DB write is repaired by the reconciler on the next tick.
+The [pre-mainnet checklist](PRE_MAINNET_CHECKLIST.md) is the gate. Nothing moves real money
+before it is done:
+- A **professional smart-contract audit** of PhaseEscrow, including v3's re-fund-after-refund
+  rule.
+- HSM / managed custody with no mnemonic in an env var.
+- A multisig as `DEFAULT_ADMIN_ROLE` and `PAUSER_ROLE`, with a pause runbook.
+- Verifiable randomness for jury draws.
+- The real processor and KYC from Stage 4.
+- Monitoring, backups and a tested restore.
+- Legal / AML review per jurisdiction.
+- Then a soft launch: one city, one or two categories, capped job values.
 
 ---
 
-## 6. Phase R3 — Wallet model rework (L)
+## 4. Decisions
 
-| # | Item | Covers |
-|---|---|---|
-| 1 | **Funding spends the real balance.** `fundPhase` no longer mints; if the balance is short, it returns `INSUFFICIENT_BALANCE` and the UI offers "Add funds". Minting happens **only** in the explicit on-ramp (`topUpCustodial`), which later becomes the real payment processor. | W2 |
-| 2 | **Clear balances.** `getWalletSummary` returns custodial **and** external balances separately, plus money currently in escrow. Earnings and Payments show all three; demo credit stays labelled "not withdrawable". | W3 |
-| 3 | **"Move to my wallet".** A new action sends the custodial balance to the verified external address (signed by the custodial account, gas sponsored). Withdraw to bank/UPI stays as the mock off-ramp. | W3, W4 |
-| 4 | **Honest role behaviour.** Worker: the linked wallet is the payee for new fundings, and each phase shows which address it pays. Client: the external wallet is used for self-custody funding (R4) and receives refunds of phases it funded; the UI text says exactly this. | W4 |
-| 5 | **Secure linking with SIWE (EIP-4361).** The server issues the nonce (`VerificationToken`, 10-minute expiry, single use). The message binds domain, URI, chainId, address and userId. Linking or changing an address requires an OTP re-check, notifies the user by SMS + email, and new payout addresses take effect on new fundings only after a 24h cooldown. Add a unique constraint on `Wallet.externalAddress`. | W5 |
-| 6 | **Finish `MOCK_BLOCKCHAIN` properly.** Replace the scattered `if`s with one `ChainAdapter` interface (`viem` / `mock`). The mock keeps an in-memory or DB ledger, so balances, escrow status, top-up and withdraw behave consistently. | F6 / W9 |
-| 7 | **Gas strategy.** Short term: keep top-ups but make them configurable per chain and recover leftover gas on withdraw. Medium term: ERC-2771 forwarder or ERC-4337 paymaster, so custodial wallets never hold gas. | W8 |
-| 8 | **Visibility.** "Add cwINR to MetaMask" (`wallet_watchAsset`), escrow contract address plus a per-phase explorer link, and an explorer base URL per chain from config. | W10 |
+**Settled:**
+1. Self-custody scope: clients can fund from their own wallet; custodial stays the default. ✅
+2. WalletConnect: our own EIP-6963 picker, with AppKit only as the QR modal; the project id is set on Vercel. ✅
+3. Amoy contracts: redeployed fresh as v2 (2026-10-06) rather than patching v1. ✅
+4. Dev databases: local Postgres + local Hardhat; Neon + Amoy only for the deployed site. ✅
 
-**Done when:** a client can't fund beyond their balance; after linking, the worker sees custodial, external and in-escrow amounts correctly and can move custodial funds to their wallet; linking without the OTP, or with a replayed or expired SIWE message, is rejected.
-
----
-
-## 7. Phase R4 — Browser-extension integration done properly (L)
-
-Stack: **wagmi v2 + viem + Reown AppKit (WalletConnect v2)**. The wagmi provider is mounted
-only in the worker/client dashboard layouts, with cookie storage for SSR (Next 16 App Router).
-Needs a free WalletConnect `projectId` (`NEXT_PUBLIC_WC_PROJECT_ID`).
-
-| # | Item | Covers |
-|---|---|---|
-| 1 | **Wallet picker.** Install wagmi + AppKit; EIP-6963 discovery lists every installed extension (MetaMask, Coinbase, Brave, Rabby…) plus WalletConnect QR / mobile deep links. Delete the raw `window.ethereum` code. | E1, E6, E8 |
-| 2 | **Network handling.** Amoy chain config comes from env. A `useEnsureChain()` hook prompts `switchChain` and falls back to `wallet_addEthereumChain`; a "Wrong network" banner blocks signing until fixed. | E2 |
-| 3 | **Live connection state.** Use wagmi's `useAccount` / `useChainId` / `watchAccount`. If the active account ≠ the linked address, show "Connected wallet differs from your linked wallet" with *Switch* / *Re-link* options. No more `window.location.reload()`: after actions, use `router.refresh()`. | E3 |
-| 4 | **Self-custody transactions.** A "Pay with my wallet" choice on Fund Phase: (a) check allowance → `approve` in the extension, (b) `fundPhase` in the extension (`msg.sender` = the client's external address), (c) the transaction hash is sent to the server, which **verifies the receipt and the `PhaseFunded` event** (correct phaseId, worker, amount, contract) before the DB moves; this goes through the R2 outbox as an externally-signed entry. Approve-release can also be signed directly by the client. | E4 |
-| 5 | **Friendly errors.** One `walletErrorMessage(e)` helper maps 4001, -32002, 4902 (unknown chain), insufficient gas and insufficient token balance to plain-language text with next steps. | E5 |
-| 6 | **Security policy update.** Add to `connect-src`: the Amoy RPC, WalletConnect relay/verify/pulse hosts, and AppKit API; `frame-src` for the WalletConnect verify iframe; `img-src` for wallet icons. Check the browser console for CSP violations. | E7 |
-| 7 | **Mobile.** WalletConnect QR on desktop; deep links into MetaMask / Trust / Coinbase mobile; test at 375px. | E6 |
-
-**Done when:** in a browser with MetaMask **and** Coinbase installed, both show in the picker; being on the wrong network prompts a switch; switching accounts in the extension updates the UI without a reload; a client funds and approves a phase entirely from MetaMask on Amoy and the DB reflects it only after server verification; WalletConnect works from a phone.
-
----
-
-## 8. Phase R5 — Completeness & cleanup (M)
-
-- [ ] **Mutual settlement:** wire "Propose settlement" to `proposeSettlement` / `acceptSettlement` (the contract already supports it); both parties see the proposal and accept or decline. (F8)
-- [ ] **Check-in:** either build the QR on-site check-in or hide the button until it exists. (F8)
-- [ ] Delete dead stubs `addFundsAction` (client/actions) and `withdrawAction` (worker/actions); the UI already uses the real wallet actions. Rename `StubButton` → `ActionButton`, since it runs real actions. (F8)
-- [ ] `git rm` the Word lock file `docs/~$ainWork_ProjectII_PPT_Fill_Guide.docx`; add `~$*` to `.gitignore`. (F8)
-- [ ] Set `APP_BASE_URL` per environment; derive it from the request host in dev. (Found during local run.)
-- [ ] Update CLAUDE.md for the five undocumented commits and every change in this roadmap. Regenerate the demo screenshots (`npm run demo:capture`) so the walkthrough has images.
-
----
-
-## 9. Phase R6 — Verification & tests (M, runs alongside R2–R5)
-
-- **Unit:** phase + dispute transition tables; SIWE message build/verify (nonce reuse, expiry, wrong domain, wrong chain); reconciler drift cases; `walletErrorMessage` mapping.
-- **Contracts:** tests that the deploy script grants relayer roles; tests for the settlement and stake paths used by the app.
-- **Integration (local Hardhat):** a full hire lifecycle through the outbox (queue → confirm → DB), including a killed-mid-flight case recovered by the reconciler.
-- **E2E (Playwright):** extend `scripts/demo-capture.mjs`. Extension flows use an injected test EIP-1193 provider backed by a Hardhat account, covering EIP-6963 announce, chain switching, account switching, and self-custody fund + approve.
-- **Security regression:** rerun the 8-attack assessment in `docs/ChainWork_Security_Assessment.docx`, plus new cases: 2FA bypass, juror impersonation, payout redirection, replayed SIWE message.
-
----
-
-## 10. Later — pre-mainnet (not needed for "perfect on testnet")
-
-Tracked in [PRE_MAINNET_CHECKLIST.md](PRE_MAINNET_CHECKLIST.md): professional smart-contract audit;
-custodial keys in HSM/MPC custody (no shared mnemonic); ERC-4337 paymaster; a real INR on/off-ramp
-(payment processor) replacing mint/burn; a real stablecoin (the test token's `mint` is open to anyone);
-a multisig as `DEFAULT_ADMIN_ROLE`; verifiable randomness (e.g. Chainlink VRF) for jury draws;
-real KYC provider; monitoring and alerting.
-
----
-
-## 11. Order & dependencies
-
-```
-R0 Baseline ──► R1 Stop the bleeding ──► R2 State machines + outbox ──► R3 Wallet model ──► R4 Extension
-                                              │                             │                  │
-                                              └──────── R6 tests run alongside each phase ─────┘
-                                                                                     R5 Cleanup (any time after R2)
-```
-
-- R4 depends on R3 (wallet modes and SIWE) and on the R2 outbox (extension-signed transactions are verified through it).
-- R1 items 1, 3, 4 and 5 are independent quick wins and can land the same day.
-
-## 12. Decisions needed from you
-
-1. **Self-custody scope:** should clients be able to fund escrow from MetaMask (R4 item 4), or should external wallets stay *payout-only*? _Recommended: support both, with custodial as the default._
-2. **WalletConnect:** OK to add Reown AppKit? It needs a free `projectId` from cloud.reown.com.
-3. **Amoy contracts:** grant roles on the existing deployment (you run `grant-roles.js` with `DEPLOYER_KEY`), or redeploy fresh? _Recommended: redeploy once R2/R3 contract-facing changes are settled; grant roles now to unblock testing._
-4. **Dev databases:** keep developing against Neon, or switch fix work to local Postgres? _Recommended: local._
-5. **Shared rate-limit store:** Upstash Redis (free tier) acceptable?
+**Needed from you:**
+1. **Shared rate-limit store** (Stage 2.4): is the Upstash Redis free tier OK? (Open since 2026-09-27.)
+2. **Check-in** (Stage 3.2): build QR check-in now, or hide the button?
+3. **A demo-money copy after the switch?** Once production runs on testnet, should a demo-money
+   site stay online for pitching? It needs its own database, because Preview shares
+   production's today.
+4. **Providers for Stage 4:** which payment processor (UPI + cards) and which KYC vendor. Both
+   need accounts you create; sandbox keys first.

@@ -15,8 +15,13 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   party — the backend can't release someone else's escrow.
 - **[OK] An Analyst (read-only) can't mutate.** Admin sections are gated by `requireAdminAccess(navKey)`
   at the route AND filtered from the sidebar; the Analyst role has no write sections.
-- **[OK] A juror can't see or vote on a case they aren't assigned to.** `assertJurorOnCase` requires a
-  JURY/ROOT role AND an actual `JuryAssignment`; the dispute queue shows a juror only their cases.
+- **[OPEN — F2, corrected 2026-10-07] A jury admin can vote as any juror on a panel.**
+  `assertJurorOnCase` requires a JURY/ROOT role and checks that the `jurorId` *sent by the browser*
+  is on the panel. It does not check that the logged-in admin **is** that juror: there is no
+  AdminUser ↔ JurorProfile link. The queue filter also compares IDs from different databases.
+  This line said "[OK]" until the 2026-09-27 analysis showed otherwise. Fix planned in
+  [ROADMAP Stage 2.1](ROADMAP.md#stage-2--jury-integrity--security-m), together with F3 (the
+  case state machine: double finalize / settle, deadlines).
 - **[OK][TEST] The two-DB boundary holds.** Admin-surface code reaches Platform data only via the
   bridge. Now enforced by `src/lib/admin/boundary.test.ts`, which fails if any admin file imports
   the Platform DB directly.
@@ -52,6 +57,11 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
 - **[OK] No secrets in the repo.** `.env` and `.chain-keystore.json` are gitignored; `git ls-files`
   shows no tracked env/key/pem files. The chain mnemonic and `AUTH_SECRET` are read from
   `process.env` (`src/lib/chain/config.ts`) — never hardcoded.
+- **[FIXED 2026-10-03] Production used the public Hardhat phrase.** Every custodial wallet's key
+  was therefore public. Replaced by a private phrase, with every stored address re-keyed
+  (`scripts/rotate-chain-mnemonic.mts`). `assertChainWritable()` refuses to sign with the public
+  phrase on any chain but 31337. The deployer key and the phrase backup live only in git-ignored
+  files.
 - **[PRE-MAINNET] Custodial key management.** Dev custody derives keys from a mnemonic — a local-dev
   stand-in only; production must use an HSM / managed custody + a gasless relayer.
 
@@ -59,7 +69,8 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
 
 - **[OK] Reentrancy, drain, and pause.** `ReentrancyGuard` on state-changing calls; a **no-drain**
   invariant (funds only ever reach the recorded worker/client); `Pausable` circuit-breaker. Covered
-  by 31 tests including a live reentrancy attack and a no-drain assertion.
+  by 45 tests (v3) including a live reentrancy attack, a fee-on-transfer token, and a no-drain
+  assertion.
 - **[PRE-MAINNET] Professional audit.** Non-negotiable before mainnet — top of the checklist.
 
 ## Admin console takeover (found + fixed 2026-10-03) — CRITICAL
@@ -98,6 +109,18 @@ require production infrastructure are **[PRE-MAINNET]** (see `PRE_MAINNET_CHECKL
   v3 is deployed to Amoy — until then the console offers only the review note.
 
 ## Summary
-One real finding fixed (login rate limiting); the standing access-control, session, injection, and
-secret controls hold. Remaining items are production-infra (shared rate-limit store, HSM custody,
-real KYC/AML providers) and the mandatory contract audit — all tracked in the pre-mainnet checklist.
+_Updated 2026-10-07._
+
+**Fixed:**
+- Login brute-force (Phase 13).
+- The live admin console takeover and the public wallet phrase (both 2026-10-03, critical).
+- The reconciler adopting refused fundings.
+- The WalletConnect server leak.
+- Stranded flagged payments (desk + alert; refund on v3).
+
+**Open:**
+- **The jury's integrity gaps F2 / F3**: next after the testnet switch,
+  [ROADMAP Stage 2](ROADMAP.md#stage-2--jury-integrity--security-m).
+- The shared rate-limit store.
+- Production infrastructure (HSM custody, real KYC / AML providers) and the mandatory contract
+  audit, all in the pre-mainnet checklist.

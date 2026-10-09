@@ -1,6 +1,9 @@
 # ChainWork — Payment System Implementation Plan
 
-_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0–P5 done (2026-10-02) · next: P6 — see PROGRESS.md "Resume here"**_
+_Created 2026-09-27 · baseline HEAD `349ab55` · status: **P0–P7 complete (2026-10-03).** Live in
+demo mode since 2026-10-03; PhaseEscrow v2 on Amoy since 2026-10-06. What's left (v3 on Amoy,
+relayer gas, the switch to testnet, 6.6b/c chains) is in
+[ROADMAP.md → Future path](ROADMAP.md#future-path)._
 
 This plan covers ROADMAP sections 1 and 2: the wallet problems (W1–W10), the browser-extension
 problems (E1–E8) and the fix-pass principles. It also covers four new requirements:
@@ -336,3 +339,16 @@ P0 Foundations ─► P1 Ledger + outbox ─┬─► P2 Receipts (PDF)
   fixes came out of the suite (reconciler adoption, WalletConnect server leak — see
   SECURITY.md). The runbook adds a step the plan didn't list: close demo-money escrows
   before switching, because they don't exist on-chain.
+- **After the plan (2026-10-03 → 10-06):**
+  - **Deployed in demo mode.** Production's chain phrase (the public Hardhat one) was
+    replaced, then v2 deployed to Amoy. Its live addresses are in PROGRESS.md.
+  - **Flagged fundings get an admin desk.** The plan only said "flag the rest": a refused
+    wallet funding is now a `FlaggedEscrow` row on ADM-10, with an ops email and a sidebar
+    badge.
+  - **PhaseEscrow v3, so a flagged funding can be refunded.** v2 can't re-fund a refunded
+    slot, so refunding a flagged funding would have closed the phase for good. v3 accepts a
+    REFUNDED slot in `_record` and adds `version()`. The flagged refund is a REFUND payment
+    with operation `flaggedRefund`: a receipt, no ledger lines, no phase change.
+  - **The CL-08 shortcut opens the payment window.** The "Fund ₹X" shortcut on CL-08 now
+    opens the payment window (`FundDueList`) instead of paying from the ChainWork wallet
+    directly.

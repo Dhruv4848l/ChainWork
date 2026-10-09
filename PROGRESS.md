@@ -4,12 +4,25 @@
 > verified phase. Each phase is one step of the build manual; a phase is only marked done
 > once its ✅ verification checklist passes and it's committed to git.
 
-**Overall: 100% — all 14 phases (0–13) complete. ChainWork is feature-complete on testnet.** 🎉
+**Overall: the build (Phases 0–13) and the payment rework (P0–P7) are both complete.**
+ChainWork is live at **https://chain-work-afdm.vercel.app** with dummy money (`PAYMENT_MODE=demo`).
+PhaseEscrow v2 is deployed on Polygon Amoy, and one item (relayer gas) is left before it can
+switch to real test transactions.
 
-> Next step is NOT more features — it's the [pre-mainnet checklist](docs/PRE_MAINNET_CHECKLIST.md),
-> topped by a professional smart-contract audit. The platform stays on testnet until that's done.
+> **What's next:** [docs/ROADMAP.md → Future path](docs/ROADMAP.md#future-path). In order:
+> 1. Finish the switch to testnet.
+> 2. Close the jury's integrity gaps (F2/F3).
+> 3. Finish the half-built buttons.
+> 4. Build the features the pitch promises.
+>
+> Real money stays off until the [pre-mainnet checklist](docs/PRE_MAINNET_CHECKLIST.md) is
+> done, starting with a professional smart-contract audit.
 
-_Last updated: 2026-07-19 (Phase 13)._
+_Last updated: 2026-10-07 (production security fixes, PhaseEscrow v2 on Amoy, flagged-payments
+desk, PhaseEscrow v3)._
+
+**Test suite today:** 84 unit · 45 contract · 16 integration · 11 browser E2E locally, plus 9 E2E
+against the live site. Production build passes.
 
 | # | Phase | Status | % |
 |---|---|---|---|
@@ -36,6 +49,14 @@ _Last updated: 2026-07-19 (Phase 13)._
 - **After Phase 9** — payments are real (testnet only).
 - **After Phase 13** ✅ — feature-complete on testnet. Then: professional smart-contract audit
   before anything touches real money (see [pre-mainnet checklist](docs/PRE_MAINNET_CHECKLIST.md)).
+- **After P7** ✅ (2026-10-03) — the payment system rebuilt and tested in four layers.
+  Receipts, a real ledger, wallet extensions, a multi-currency payment window and a
+  demo/testnet switch.
+- **Live in production** ✅ (2026-10-03) — deployed in demo-money mode; two critical security
+  holes found and closed the same day.
+- **Escrow v2 on Amoy** ✅ (2026-10-06) — the real contract is live on Polygon's test network.
+- **Next:** switch production to `PAYMENT_MODE=testnet`
+  ([runbook](docs/RUNBOOK_DEMO_TO_TESTNET.md)).
 
 ## Phase 0 — what got built (done 2026-07-17)
 
@@ -348,8 +369,9 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
 | P3 | Wallet model rework (real balances, SIWE linking, move-to-wallet, stake on-chain) | ✅ Done (2026-10-02) |
 | P4 | Universal wallet connection (wagmi + EIP-6963 + WalletConnect) | ✅ Done (2026-10-02) — WalletConnect needs a project id |
 | P5 | Live wallet tracker + rolling ticker | ✅ Done (2026-10-02) |
-| P6 | Multi-crypto payment window (PhaseEscrow v2) | ✅ Done (2026-10-02) — Polygon set (6a); Amoy redeploy is a user step |
-| P7 | Hardening, E2E tests, "turn off demo money" runbook | ✅ Done (2026-10-03) — payment plan complete on local chain |
+| P6 | Multi-crypto payment window (PhaseEscrow v2) | ✅ Done (2026-10-02) — Polygon set (6a); v2 live on Amoy 2026-10-06 |
+| P7 | Hardening, E2E tests, "turn off demo money" runbook | ✅ Done (2026-10-03) — payment plan complete |
+| — | Production deploy + security fixes + flagged-payments desk + PhaseEscrow v3 | ✅ Done (2026-10-03 → 10-06) — see "Production" below; v3 not yet on Amoy |
 
 **P0 — what changed**
 - **`PAYMENT_MODE`** (`src/lib/payments/mode.ts`) = `demo` | `testnet` | `mainnet`. Legacy
@@ -542,47 +564,88 @@ demo — plus a repeatable, screenshotted end-to-end run to show a mentor or a p
   `/api/health/chain` now also proves the escrow is v2 and each asset is allowlisted;
   `scripts/open-demo-escrows.mts` lists demo-money escrows to close before switching.
 
-**Deployed (2026-10-03):** P0–P7 is live on https://chain-work-afdm.vercel.app in **demo
-mode** — `PAYMENT_MODE=demo` set on Vercel (Production + Preview; Preview previously had no
-mode and would have run testnet against the production DB), the 6 platform migrations applied
-to Neon, `backfill-payments` run (3 payments, 3 receipts), `main` fast-forwarded to
-`payment-system`. `npm run test:e2e:remote` against the live site: **9/9 pass** (fixture
-accounts `e2e-*@example.com` remain in the production DB, clearly labelled).
+## Production — deploy, security fixes, escrow on Amoy (2026-10-03 → 2026-10-07)
 
-**Resume here** — the payment plan (P0–P7) is complete and live in demo mode.
-1. **Go live on Amoy (user step, needs the deployer key):** follow
-   [docs/RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md) end to end. The live
-   health check already shows what's left: ~~production's `CHAIN_MNEMONIC` is the public
-   Hardhat phrase~~ **replaced 2026-10-03** (new relayer `0x4170…6258`, wallets re-keyed by
-   `scripts/rotate-chain-mnemonic.mts`); ~~the escrow is v1~~ **PhaseEscrow v2 deployed
-   2026-10-06** — escrow `0xe10140d24b60C07F645BC3385ddcBF7E0d0879c1`, test USDT
-   `0x7600924f974aB25FDbd18272CEf134cdA58145e2`, test USDC `0xDc1F13B70339aF15C7BcA4F55Be16716A466c82d`,
-   cwINR reused `0x1be17798611E2e4aC0C6d1E018ed8e5c23B77eDC`; relayer roles granted; set on
-   Vercel (Production + Preview). Cost 0.125 POL at a 35 gwei cap (`AMOY_GAS_PRICE_GWEI`);
-   deployer `0x6a04…4cF8` has 0.075 POL left. **Left before PAYMENT_MODE=testnet:** fund the
-   relayer `0x4170d656a439E1682004f9Fb1d3302442a076258` (health check wants ≥0.5 POL;
-   `CHAIN_RELAYER_MIN_GAS` lowers it for a short smoke test).
-2. ~~Admin tooling for flagged escrows~~ **done 2026-10-06:** `FlaggedEscrow` (migration
-   `flagged_escrow` — apply to Neon with `npm run db:deploy` before deploying), ADM-10
-   "Flagged wallet payments" with review notes (audit-logged), clear reasons ("paid 15.27 USDT,
-   short of the 15.58 USDT quoted"). Alert done too: a new flag emails `OPS_ALERT_EMAIL` once
-   and the console sidebar badges "Pending Payments" with the open count. **Refund to
-   payer done too (code + tests):** PhaseEscrow **v3** (a refunded slot can be funded again;
-   `version()` = 3) — 45 contract tests, integration test "returns a refused funding to whoever
-   paid it…". **Not yet on Amoy** (the live escrow is v2, so the console shows only the review
-   note): deploying v3 needs ~0.07–0.1 test POL on the deployer (it has 0.075) and moves
-   `CHAIN_ESCROW_ADDRESS` again. Also done: CL-08 "Fund ₹X" opens the
-   payment window; `/api/health/chain` adds `testnetReady` / `testnetTodo`, and marks chain
-   checks `required: false` in demo mode.
-3. `python scripts/build-demo-docx.py` (needs `pip install python-docx`) to refresh the
-   walkthrough .docx from the new screenshots.
-4. P6 left for later: Sepolia / BNB testnet asset sets (6.6b/c), a network-fee estimate in
-   the quote, the dashboard's "Fund ₹X" shortcut (`FundDueButton`) still pays from the
-   ChainWork wallet directly instead of opening the window.
-5. Local dev: the Hardhat chain loses all state on restart (balances, escrows). Consider
-   switching the local node to anvil `--state` (persists) — or re-seed after restarts.
-6. Statement wallet section still in / out / net (P3 note).
-7. Before deploying to Neon/Vercel: `npm run db:deploy` (migrations `demo_chain`,
-   `payment_ledger`, `phase_reconcile_cursor`, `receipts`, `wallet_link`, `payment_quote`), run
-   `scripts/backfill-payments.mts`, set `APP_BASE_URL`, `NEXT_PUBLIC_WC_PROJECT_ID`, optionally
-   `ALCHEMY_API_KEY` / `COINGECKO_API_KEY`, and add the `delivery_stake_pct` config row.
+**Deployed (2026-10-03).** P0–P7 went live on https://chain-work-afdm.vercel.app in **demo
+mode**:
+- `PAYMENT_MODE=demo` set on Vercel for Production and Preview. Preview previously had no mode
+  and would have run testnet against the production DB.
+- The platform migrations applied to Neon; `backfill-payments` run (3 payments, 3 receipts).
+- `main` fast-forwarded to `payment-system`.
+- `npm run test:e2e:remote` against the live site: **9/9 pass**. The fixture accounts
+  (`e2e-*@example.com`, "50…" phones) remain in the production DB, clearly labelled.
+
+**Admin console takeover closed (2026-10-03, `db22435`) — critical.** Anyone could log into the
+live admin console. Production accepted `000000` as a 2FA code, fell back to a dev TOTP secret
+published in this public repo, and all 5 admins still had the seeded `admin123` password.
+- Every production admin was rotated to a random password plus their own TOTP secret
+  (`scripts/rotate-admin-credentials.mts`, audit-logged).
+- The logins and QR codes are kept outside git in `.admin-credentials/`.
+- The bypass and the production fallback are gone (`src/lib/admin/totpPolicy.ts`, tested).
+- The audit log showed no admin login had ever happened, so there's no sign the hole was used.
+
+**Public wallet phrase replaced (2026-10-03, `29b7fc7`).** Production's `CHAIN_MNEMONIC` was the
+public Hardhat test phrase, so every custodial wallet's key was public.
+- New private phrase, and every stored address was re-keyed: `Wallet.custodialAddress`,
+  `DemoAccount`, `DemoEscrow` (`scripts/rotate-chain-mnemonic.mts`).
+- New relayer: `0x4170d656a439E1682004f9Fb1d3302442a076258`.
+- The phrase backup is kept outside git in `.secrets/`.
+
+**PhaseEscrow v2 live on Polygon Amoy (2026-10-06, `51de868`).**
+- New deployer `0x6a04…4cF8` (the key lives only in the git-ignored `contracts/.env`).
+- `deploy.js` reuses the existing cwINR (`EXISTING_TOKEN_ADDRESS`, `ca7d49c`).
+- `AMOY_GAS_PRICE_GWEI=35` caps the fee: the Amoy RPC suggests 150–270 gwei tips.
+- Cost: 0.125 test POL.
+
+| Contract | Amoy address |
+|---|---|
+| PhaseEscrow v2 | `0xe10140d24b60C07F645BC3385ddcBF7E0d0879c1` |
+| cwINR (reused) | `0x1be17798611E2e4aC0C6d1E018ed8e5c23B77eDC` |
+| test USDT | `0x7600924f974aB25FDbd18272CEf134cdA58145e2` |
+| test USDC | `0xDc1F13B70339aF15C7BcA4F55Be16716A466c82d` |
+
+The relayer holds the ATTESTOR and DISPUTE roles, and all four assets (cwINR, USDT, USDC,
+native POL) are allowlisted. The addresses are set on Vercel for Production and Preview.
+
+**Flagged-payments desk (2026-10-06, `d4e5b7b`, `e8e5dd0`, `9bc4531`).** A payment a client
+sends from their own wallet that doesn't match the deal (wrong worker, short of the price, wrong
+currency) is never credited. Now it is also never lost.
+- **Recorded.** It becomes a `FlaggedEscrow` row (migration `flagged_escrow`, applied to Neon).
+- **Listed for an admin** on ADM-10 "Flagged wallet payments", with a plain reason (e.g. "paid
+  15.27 USDT, short of the 15.58 USDT quoted"). The admin closes it with a note
+  (audit-logged).
+- **Alerted.** A new flag emails `OPS_ALERT_EMAIL` once (`src/lib/ops/alerts.ts`), and the
+  console sidebar shows the open count on "Pending Payments".
+- **Refundable — PhaseEscrow v3** (`version()` = 3). A refunded escrow slot can be funded
+  again, so "Refund to payer" sends the money back in the same currency to whoever sent it,
+  and the phase stays payable.
+  - The refund issues a receipt and adds no ledger lines (the money was never credited).
+  - The reconciler leaves a "refunded, still awaiting funding" phase alone.
+  - The button shows only when the live contract reports v3 (`chain.contractVersion()`).
+- **Also in this batch:**
+  - CL-08's "Fund ₹X" now opens the payment window (`FundDueList`) instead of paying from the
+    ChainWork wallet directly.
+  - `/api/health/chain` adds `testnetReady` / `testnetTodo`. In demo mode it marks chain
+    checks `required: false`, so the page reads ok instead of a false alarm.
+
+**Live health (2026-10-07):** `ok: true` · mode demo · chain 80002 · private keys · escrow v2 ·
+all assets allowlisted · relayer roles granted. The only `testnetTodo` item is **relayer gas: 0
+native (minimum 0.5)**.
+
+**Resume here (2026-10-07).** The next three steps are wallet top-ups only you can do (test POL
+from a faucet). The full ordered plan is in [ROADMAP.md → Future path](docs/ROADMAP.md#future-path).
+1. **Deploy PhaseEscrow v3 to Amoy.**
+   - Funds: the escrow-only deploy measured 2.45 M gas, about 0.074–0.086 POL at 30–35 gwei.
+     The deployer `0x6a04Fa4D1CB867106b3A362066a96E2921834cF8` has 0.075, so send ~0.05 more.
+   - Code: give `deploy.js` an option to reuse the live USDT / USDC too (today it always
+     deploys new mocks).
+   - After the deploy: allowlist the assets, grant the relayer roles, then set
+     `CHAIN_ESCROW_ADDRESS` on Vercel and redeploy. Nothing is funded on v2 yet (demo mode), so
+     nothing needs moving.
+2. **Fund the relayer:** ≥ 0.5 test POL to `0x4170d656a439E1682004f9Fb1d3302442a076258`, or lower
+   `CHAIN_RELAYER_MIN_GAS` for a short smoke test.
+3. **Optional:** set `OPS_ALERT_EMAIL` on Vercel so flagged payments email someone.
+4. **Switch to testnet.** Follow [RUNBOOK_DEMO_TO_TESTNET.md](docs/RUNBOOK_DEMO_TO_TESTNET.md):
+   close the demo-money escrows, set `PAYMENT_MODE=testnet`, smoke-test one payment and its
+   receipt, then re-run `npm run test:e2e:remote`.
+5. **Then the jury integrity fixes** (F2/F3): the largest correctness gap left.
